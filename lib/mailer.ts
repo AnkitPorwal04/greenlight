@@ -40,25 +40,33 @@ export async function sendDecisionMail(
     `<div>${escapeHtml(body).replace(/\n/g, "<br>")}</div>` +
     (signature ? `<br>${signature}` : "");
 
-  const encodedSubject = /^[\x20-\x7e]*$/.test(subject)
-    ? subject
-    : `=?UTF-8?B?${Buffer.from(subject, "utf8").toString("base64")}?=`;
-
   let origMessageId = "";
+  let replySubject = subject;
   try {
     const orig = await gmail.users.messages.get({
       userId: "me",
       id: input.request.id,
       format: "metadata",
-      metadataHeaders: ["Message-ID"],
+      metadataHeaders: ["Message-ID", "Subject"],
     });
-    origMessageId =
+    const header = (name: string) =>
       orig.data.payload?.headers?.find(
-        (h) => h.name?.toLowerCase() === "message-id"
+        (h) => h.name?.toLowerCase() === name.toLowerCase()
       )?.value ?? "";
+    origMessageId = header("Message-ID");
+    const origSubject = header("Subject");
+    if (origSubject) {
+      replySubject = /^re:/i.test(origSubject)
+        ? origSubject
+        : `Re: ${origSubject}`;
+    }
   } catch {
     origMessageId = "";
   }
+
+  const encodedSubject = /^[\x20-\x7e]*$/.test(replySubject)
+    ? replySubject
+    : `=?UTF-8?B?${Buffer.from(replySubject, "utf8").toString("base64")}?=`;
 
   const headers = [
     `To: ${input.to}`,
