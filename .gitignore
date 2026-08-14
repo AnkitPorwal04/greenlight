@@ -42,3 +42,6 @@ next-env.d.ts
 
 # LeavePilot local data (OAuth tokens + decisions)
 .data/
+
+# Private employee data (paste into the app Directory instead)
+employees-backup.tsv
