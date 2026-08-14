@@ -2,7 +2,9 @@ import { OAuth2Client, Credentials } from "google-auth-library";
 import { gmail, gmail_v1 } from "@googleapis/gmail";
 import { getJSON, setJSON, delKey } from "./storage";
 
-const TOKENS_KEY = "gmail_tokens";
+function tokensKey(email: string) {
+  return `gmail_tokens:${email.toLowerCase()}`;
+}
 
 export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
@@ -26,26 +28,28 @@ export function getOAuthClient(origin?: string): OAuth2Client {
   return new OAuth2Client(clientId, clientSecret, redirectUri);
 }
 
-export async function saveTokens(tokens: Credentials) {
+export async function saveTokens(email: string, tokens: Credentials) {
   // Merge because Google returns refresh_token only on the FIRST consent;
   // overwriting on later refreshes would silently destroy it
-  const existing = (await getJSON<Credentials>(TOKENS_KEY)) ?? {};
-  await setJSON(TOKENS_KEY, { ...existing, ...tokens });
+  const key = tokensKey(email);
+  const existing = (await getJSON<Credentials>(key)) ?? {};
+  await setJSON(key, { ...existing, ...tokens });
 }
 
-export async function clearTokens() {
-  await delKey(TOKENS_KEY);
+export async function clearTokens(email: string) {
+  await delKey(tokensKey(email));
 }
 
 export async function getAuthorizedClient(
+  email: string,
   origin?: string
 ): Promise<OAuth2Client | null> {
-  const tokens = await getJSON<Credentials>(TOKENS_KEY);
+  const tokens = await getJSON<Credentials>(tokensKey(email));
   if (!tokens?.refresh_token && !tokens?.access_token) return null;
   const client = getOAuthClient(origin);
   client.setCredentials(tokens);
   client.on("tokens", (t) => {
-    void saveTokens(t);
+    void saveTokens(email, t);
   });
   return client;
 }

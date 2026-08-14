@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import type { gmail_v1 } from "@googleapis/gmail";
 import { getAuthorizedClient, getGmail } from "@/lib/google";
+import { getUserFromRequest } from "@/lib/session";
 import { parseLeaveMail, extractBodyText } from "@/lib/parser";
 import { loadDecisions, saveDecision } from "@/lib/store";
 import { loadEmployees } from "@/lib/employees";
@@ -30,8 +31,13 @@ const SEARCH_QUERY =
   process.env.LEAVE_MAIL_QUERY ??
   'from:no-reply@greythr.com subject:"Leave Application from"';
 
-export async function GET() {
-  const client = await getAuthorizedClient();
+export async function GET(req: NextRequest) {
+  const user = getUserFromRequest(req);
+  if (!user) {
+    return NextResponse.json({ error: "not_connected" }, { status: 401 });
+  }
+
+  const client = await getAuthorizedClient(user);
   if (!client) {
     return NextResponse.json({ error: "not_connected" }, { status: 401 });
   }
@@ -45,7 +51,7 @@ export async function GET() {
         q: SEARCH_QUERY,
         maxResults: 50,
       }),
-      loadDecisions(),
+      loadDecisions(user),
       loadEmployees(),
     ]);
     const selfEmail = profile.data.emailAddress ?? "";
@@ -80,7 +86,7 @@ export async function GET() {
           decidedAt: new Date().toISOString(),
           note: "Auto-detected: you already replied in this Gmail thread",
         };
-        await saveDecision(msg.id!, decision);
+        await saveDecision(user, msg.id!, decision);
       }
 
       const receivedMs = msg.internalDate
@@ -100,7 +106,7 @@ export async function GET() {
             decidedAt: new Date().toISOString(),
             note: `Auto-detected: you mailed ${employeeEmail} after this request`,
           };
-          await saveDecision(msg.id!, decision);
+          await saveDecision(user, msg.id!, decision);
         }
       }
       requests.push({

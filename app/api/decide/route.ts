@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthorizedClient } from "@/lib/google";
+import { getUserFromRequest } from "@/lib/session";
 import { sendDecisionMail } from "@/lib/mailer";
 import { saveDecision } from "@/lib/store";
 import type { LeaveRequest } from "@/lib/types";
@@ -15,7 +16,12 @@ interface DecideBody {
 }
 
 export async function POST(req: NextRequest) {
-  const client = await getAuthorizedClient();
+  const user = getUserFromRequest(req);
+  if (!user) {
+    return NextResponse.json({ error: "not_connected" }, { status: 401 });
+  }
+
+  const client = await getAuthorizedClient(user);
   if (!client) {
     return NextResponse.json({ error: "not_connected" }, { status: 401 });
   }
@@ -45,7 +51,7 @@ export async function POST(req: NextRequest) {
       to,
       cc: cc ?? [],
     });
-    await saveDecision(request.id, {
+    await saveDecision(user, request.id, {
       status: action,
       decidedAt: new Date().toISOString(),
       note,

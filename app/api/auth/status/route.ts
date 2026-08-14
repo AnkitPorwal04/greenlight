@@ -1,11 +1,16 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getAuthorizedClient, getGmail, clearTokens } from "@/lib/google";
+import { getUserFromRequest, clearUserCookie } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const client = await getAuthorizedClient();
+export async function GET(req: NextRequest) {
+  const email = getUserFromRequest(req);
+  if (!email) return NextResponse.json({ connected: false });
+
+  const client = await getAuthorizedClient(email);
   if (!client) return NextResponse.json({ connected: false });
+
   try {
     const gmail = getGmail(client);
     const profile = await gmail.users.getProfile({ userId: "me" });
@@ -18,7 +23,10 @@ export async function GET() {
   }
 }
 
-export async function DELETE() {
-  await clearTokens();
-  return NextResponse.json({ connected: false });
+export async function DELETE(req: NextRequest) {
+  const email = getUserFromRequest(req);
+  if (email) await clearTokens(email);
+  const res = NextResponse.json({ connected: false });
+  clearUserCookie(res);
+  return res;
 }

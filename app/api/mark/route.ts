@@ -1,9 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAuthorizedClient } from "@/lib/google";
+import { getUserFromRequest } from "@/lib/session";
 import { saveDecision } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
+  const user = getUserFromRequest(req);
+  if (!user) {
+    return NextResponse.json({ error: "not_connected" }, { status: 401 });
+  }
+
+  const client = await getAuthorizedClient(user);
+  if (!client) {
+    return NextResponse.json({ error: "not_connected" }, { status: 401 });
+  }
+
   let ids: string[];
   try {
     const body = await req.json();
@@ -17,7 +29,7 @@ export async function POST(req: NextRequest) {
 
   const decidedAt = new Date().toISOString();
   for (const id of ids) {
-    await saveDecision(id, {
+    await saveDecision(user, id, {
       status: "handled",
       decidedAt,
       note: "Marked as handled (dealt with outside Greenlight)",

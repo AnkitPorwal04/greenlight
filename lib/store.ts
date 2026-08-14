@@ -1,14 +1,24 @@
 import { getJSON, setJSON } from "./storage";
 import type { Decision } from "./types";
 
-const DECISIONS_KEY = "decisions";
-
-export async function loadDecisions(): Promise<Record<string, Decision>> {
-  return (await getJSON<Record<string, Decision>>(DECISIONS_KEY)) ?? {};
+function decisionsKey(email: string) {
+  return `decisions:${email.toLowerCase()}`;
 }
 
-export async function saveDecision(messageId: string, decision: Decision) {
-  const all = await loadDecisions();
+export async function loadDecisions(
+  email: string
+): Promise<Record<string, Decision>> {
+  return (
+    (await getJSON<Record<string, Decision>>(decisionsKey(email))) ?? {}
+  );
+}
+
+export async function saveDecision(
+  email: string,
+  messageId: string,
+  decision: Decision
+) {
+  const all = await loadDecisions(email);
   all[messageId] = decision;
-  await setJSON(DECISIONS_KEY, all);
+  await setJSON(decisionsKey(email), all);
 }
