@@ -1,5 +1,5 @@
 {
-  "name": "leave-pilot",
+  "name": "greenlight",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -9,6 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@googleapis/gmail": "^18.0.0",
+    "@upstash/redis": "^1.38.2",
+    "google-auth-library": "10.5.0",
     "next": "16.3.1",
     "react": "19.2.8",
     "react-dom": "19.2.8"

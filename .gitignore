@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# LeavePilot local data (OAuth tokens + decisions)
+.data/

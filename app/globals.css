@@ -1,26 +1,188 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+  --bg: #080b12;
+  --surface: #0d1119;
+  --surface-raised: #111725;
+  --surface-sunken: #070a11;
+  --rail: #0a0e16;
+  --border: #1e293b;
+  --border-strong: #334155;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --accent: #10b981;
+  --accent-2: #14b8a6;
+  --accent-soft: rgba(16, 185, 129, 0.12);
+  --accent-ring: rgba(16, 185, 129, 0.5);
+  --overlay: rgba(2, 6, 12, 0.8);
+  --skeleton: #131a28;
+  --shadow: rgba(0, 0, 0, 0.5);
+  --c-emerald: #6ee7b7;
+  --c-amber: #fcd34d;
+  --c-rose: #fda4af;
+  --c-indigo: #a5b4fc;
+  --c-sky: #7dd3fc;
+  --c-violet: #c4b5fd;
+  --c-fuchsia: #f0abfc;
+  --c-teal: #5eead4;
+  --c-neutral: #cbd5e1;
+  --hairline: var(--border);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html.light {
+  color-scheme: light;
+  --bg: #f4f6fa;
+  --surface: #ffffff;
+  --surface-raised: #eef2f7;
+  --surface-sunken: #f8fafc;
+  --rail: #ffffff;
+  --border: #dfe5ee;
+  --border-strong: #c3ccda;
+  --text-primary: #0f172a;
+  --text-secondary: #4b5768;
+  --text-muted: #6b7789;
+  --accent: #059669;
+  --accent-2: #0d9488;
+  --accent-soft: rgba(5, 150, 105, 0.1);
+  --accent-ring: rgba(5, 150, 105, 0.4);
+  --overlay: rgba(15, 23, 42, 0.35);
+  --skeleton: #e4e9f0;
+  --shadow: rgba(15, 23, 42, 0.16);
+  --c-emerald: #047857;
+  --c-amber: #b45309;
+  --c-rose: #be123c;
+  --c-indigo: #4338ca;
+  --c-sky: #0369a1;
+  --c-violet: #6d28d9;
+  --c-fuchsia: #a21caf;
+  --c-teal: #0f766e;
+  --c-neutral: #475569;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.app-bg {
+  background:
+    radial-gradient(
+      52rem 24rem at 18% -10%,
+      var(--accent-soft),
+      transparent 62%
+    ),
+    var(--bg);
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.panel-hover:hover {
+  background: var(--surface-raised);
+}
+
+.rail {
+  background: var(--rail);
+  border-right: 1px solid var(--border);
+}
+
+.sticky-date {
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.accent {
+  background-image: linear-gradient(100deg, var(--accent), var(--accent-2));
+}
+
+.field {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.field:focus {
+  outline: none;
+  border-color: var(--accent-ring);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.field::placeholder {
+  color: var(--text-muted);
+}
+
+.theme-when-light {
+  display: none;
+}
+
+html.light .theme-when-light {
+  display: flex;
+}
+
+html.light .theme-when-dark {
+  display: none;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rise-in {
+  animation: rise-in 0.22s ease-out both;
+}
+
+@keyframes shimmer {
+  0% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0.45;
+  }
+}
+
+.skeleton {
+  background: var(--skeleton);
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise-in,
+  .skeleton {
+    animation: none;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
 }
