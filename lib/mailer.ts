@@ -40,10 +40,14 @@ export async function sendDecisionMail(
     `<div>${escapeHtml(body).replace(/\n/g, "<br>")}</div>` +
     (signature ? `<br>${signature}` : "");
 
+  const encodedSubject = /^[\x20-\x7e]*$/.test(subject)
+    ? subject
+    : `=?UTF-8?B?${Buffer.from(subject, "utf8").toString("base64")}?=`;
+
   const headers = [
     `To: ${input.to}`,
     input.cc.length ? `Cc: ${input.cc.join(", ")}` : null,
-    `Subject: ${subject}`,
+    `Subject: ${encodedSubject}`,
     `Content-Type: text/html; charset="UTF-8"`,
     `MIME-Version: 1.0`,
   ]

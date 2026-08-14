@@ -12,7 +12,7 @@ export function composeDecisionMail({ request, action }: ComposeInput) {
       ? request.fromDate
       : `${request.fromDate} to ${request.toDate}`;
 
-  const subject = `Re: Leave Application from ${request.employeeName} [${request.employeeCode}] — ${
+  const subject = `Re: Leave Application from ${request.employeeName} [${request.employeeCode}] - ${
     action === "approved" ? "Approved" : "Rejected"
   }`;
 
