@@ -1,6 +1,7 @@
 import { FieldLabel, Modal, ModalFooter, ModalHeader } from "./Modal";
 import { IconAlert, IconCheckCircle } from "./icons";
 import { dateRange, dayCount, type ModalState } from "./utils";
+import { composeDecisionMail } from "@/lib/compose";
 
 export function DecisionModal({
   modal,
@@ -86,6 +87,8 @@ export function DecisionModal({
           />
         </label>
 
+        <MailPreview modal={modal} />
+
         {modal.error && (
           <p className="flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-[var(--c-rose)]">
             <IconAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -119,5 +122,27 @@ export function DecisionModal({
         </button>
       </ModalFooter>
     </Modal>
+  );
+}
+
+function MailPreview({ modal }: { modal: ModalState }) {
+  const { subject, body } = composeDecisionMail({
+    request: modal.request,
+    action: modal.action,
+    note: modal.note.trim() || undefined,
+  });
+
+  return (
+    <div>
+      <FieldLabel>Mail preview — exactly what will be sent</FieldLabel>
+      <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-raised)]">
+        <p className="border-b border-[var(--border)] px-3 py-2 text-xs font-semibold text-[var(--text-primary)]">
+          {subject}
+        </p>
+        <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap px-3 py-2.5 font-sans text-xs leading-relaxed text-[var(--text-secondary)]">
+          {body}
+        </pre>
+      </div>
+    </div>
   );
 }
