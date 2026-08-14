@@ -44,10 +44,28 @@ export async function sendDecisionMail(
     ? subject
     : `=?UTF-8?B?${Buffer.from(subject, "utf8").toString("base64")}?=`;
 
+  let origMessageId = "";
+  try {
+    const orig = await gmail.users.messages.get({
+      userId: "me",
+      id: input.request.id,
+      format: "metadata",
+      metadataHeaders: ["Message-ID"],
+    });
+    origMessageId =
+      orig.data.payload?.headers?.find(
+        (h) => h.name?.toLowerCase() === "message-id"
+      )?.value ?? "";
+  } catch {
+    origMessageId = "";
+  }
+
   const headers = [
     `To: ${input.to}`,
     input.cc.length ? `Cc: ${input.cc.join(", ")}` : null,
     `Subject: ${encodedSubject}`,
+    origMessageId ? `In-Reply-To: ${origMessageId}` : null,
+    origMessageId ? `References: ${origMessageId}` : null,
     `Content-Type: text/html; charset="UTF-8"`,
     `MIME-Version: 1.0`,
   ]
@@ -58,7 +76,10 @@ export async function sendDecisionMail(
 
   await gmail.users.messages.send({
     userId: "me",
-    requestBody: { raw: encodeMimeMessage(raw) },
+    requestBody: {
+      raw: encodeMimeMessage(raw),
+      threadId: input.request.threadId || undefined,
+    },
   });
 
   return { subject, body };

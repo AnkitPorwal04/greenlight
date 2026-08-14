@@ -8,9 +8,15 @@ function decisionsKey(email: string) {
 export async function loadDecisions(
   email: string
 ): Promise<Record<string, Decision>> {
-  return (
-    (await getJSON<Record<string, Decision>>(decisionsKey(email))) ?? {}
-  );
+  const key = decisionsKey(email);
+  const own = await getJSON<Record<string, Decision>>(key);
+  const legacy = await getJSON<Record<string, Decision>>("decisions");
+  if (!legacy || Object.keys(legacy).length === 0) return own ?? {};
+  const merged = { ...legacy, ...(own ?? {}) };
+  if (Object.keys(merged).length !== Object.keys(own ?? {}).length) {
+    await setJSON(key, merged);
+  }
+  return merged;
 }
 
 export async function saveDecision(
