@@ -3,7 +3,7 @@ import { IconArrowRight, IconCheckCircle, Logo } from "./icons";
 
 export function ConnectHero() {
   return (
-    <div className="rise-in panel mx-auto mt-10 max-w-lg rounded-2xl p-8 text-center">
+    <div className="rise-in panel mx-auto mt-10 max-w-lg rounded-2xl p-6 text-center sm:p-8">
       <div className="mx-auto flex w-fit">
         <Logo size={48} idSuffix="hero" />
       </div>

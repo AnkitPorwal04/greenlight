@@ -29,6 +29,17 @@
   --c-teal: #5eead4;
   --c-neutral: #cbd5e1;
   --hairline: var(--border);
+  --nav-bar-h: 3.5rem;
+  --nav-tabs-h: 3rem;
+  --nav-h: calc(var(--nav-bar-h) + var(--nav-tabs-h) + 2px);
+}
+
+@media (min-width: 48rem) {
+  :root {
+    --nav-bar-h: 4rem;
+    --nav-tabs-h: 0rem;
+    --nav-h: calc(var(--nav-bar-h) + 1px);
+  }
 }
 
 html.light {

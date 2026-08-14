@@ -42,7 +42,7 @@ export function DirectoryModal({
         subtitle="Requests are matched by employee code so decision mails reach the exact right address."
       />
 
-      <div className="px-5 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
         <label className="block">
           <FieldLabel>
             Paste CSV{" "}
@@ -54,11 +54,11 @@ export function DirectoryModal({
           <textarea
             value={raw}
             onChange={(e) => setRaw(e.target.value)}
-            rows={9}
+            rows={8}
             placeholder={
               "GRP1931,Prem Ayer,prem.ayer@ethara.ai\nGRP1820,Dimple Soni,dimple.soni@ethara.ai"
             }
-            className="field w-full resize-none rounded-lg px-3 py-2.5 font-mono text-xs leading-relaxed transition"
+            className="field max-h-[40dvh] w-full resize-none overflow-y-auto rounded-lg px-3 py-2.5 font-mono text-xs leading-relaxed transition"
           />
         </label>
         {error && (
@@ -73,14 +73,14 @@ export function DirectoryModal({
         <button
           onClick={onClose}
           disabled={busy}
-          className="rounded-lg px-3 py-2 text-sm font-medium text-[var(--text-secondary)] transition hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)] disabled:opacity-50"
+          className="min-h-10 rounded-lg px-3 py-2.5 text-sm font-medium text-[var(--text-secondary)] transition hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)] disabled:opacity-50"
         >
           Cancel
         </button>
         <button
           onClick={save}
           disabled={busy || !raw.trim()}
-          className="accent rounded-lg px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+          className="accent min-h-10 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
         >
           {busy ? "Saving…" : "Save directory"}
         </button>

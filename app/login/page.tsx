@@ -35,13 +35,13 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="app-bg relative flex min-h-screen flex-1 items-center justify-center px-4">
+    <main className="app-bg relative flex min-h-screen flex-1 items-center justify-center px-4 py-16">
       <div className="absolute right-4 top-4">
         <ThemeToggleIcon />
       </div>
       <form
         onSubmit={submit}
-        className="panel rise-in w-full max-w-sm rounded-2xl p-8 text-center"
+        className="panel rise-in w-full max-w-sm rounded-2xl p-6 text-center sm:p-8"
       >
         <div className="mx-auto mb-5 flex w-fit">
           <Logo size={44} idSuffix="login" />

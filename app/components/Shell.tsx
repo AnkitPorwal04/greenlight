@@ -66,7 +66,7 @@ function Tab({
       onClick={onClick}
       disabled={disabled}
       aria-current={active ? "page" : undefined}
-      className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
+      className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40 md:py-1.5 ${
         active
           ? "bg-[var(--surface-raised)] text-[var(--text-primary)]"
           : "text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
@@ -103,13 +103,13 @@ function SearchField({
         autoFocus={autoFocus}
         placeholder="Search name or code"
         aria-label="Search requests"
-        className="field w-full rounded-lg py-1.5 pl-9 pr-8 text-sm transition"
+        className="field w-full rounded-lg py-2.5 pl-9 pr-11 text-sm transition md:py-1.5 md:pr-10"
       />
       {query && (
         <button
           onClick={() => onQuery("")}
           aria-label="Clear search"
-          className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--text-muted)] transition hover:text-[var(--text-primary)]"
+          className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded text-[var(--text-muted)] transition hover:text-[var(--text-primary)] md:h-8 md:w-8"
         >
           <IconX className="h-3.5 w-3.5" />
         </button>
@@ -153,14 +153,14 @@ function AccountMenu({
   const initial = email.trim().charAt(0).toUpperCase() || "?";
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative shrink-0">
       <button
         onClick={() => setOpen(!open)}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Account menu"
         title={connected ? email : "Not connected"}
-        className={`relative flex h-9 w-9 items-center justify-center rounded-full border text-sm font-semibold transition ${
+        className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border text-sm font-semibold transition md:h-9 md:w-9 ${
           open
             ? "border-[var(--accent-ring)] bg-[var(--accent-soft)] text-[var(--accent)]"
             : "border-[var(--border)] bg-[var(--surface-raised)] text-[var(--text-secondary)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
@@ -177,13 +177,13 @@ function AccountMenu({
       {open && (
         <div
           role="menu"
-          className="menu-pop rise-in absolute right-0 top-11 z-50 w-64 overflow-hidden rounded-xl"
+          className="menu-pop rise-in absolute right-0 top-12 z-50 w-64 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl md:top-11"
         >
           <div className="border-b border-[var(--border)] px-4 py-3">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
               {connected ? "Connected account" : "Account"}
             </p>
-            <div className="mt-1.5 flex items-center gap-2">
+            <div className="mt-1.5 flex min-w-0 items-center gap-2">
               <span
                 className={`h-1.5 w-1.5 shrink-0 rounded-full ${
                   connected ? "bg-emerald-500" : "bg-[var(--text-muted)]"
@@ -191,7 +191,7 @@ function AccountMenu({
               />
               <span
                 title={email}
-                className="truncate text-sm text-[var(--text-primary)]"
+                className="min-w-0 truncate text-sm text-[var(--text-primary)]"
               >
                 {connected ? email || "Gmail" : "No Gmail connected"}
               </span>
@@ -206,7 +206,7 @@ function AccountMenu({
                   setOpen(false);
                   onDisconnect();
                 }}
-                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-[var(--text-secondary)] transition hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
+                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm text-[var(--text-secondary)] transition hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
               >
                 <IconLogout className="h-4 w-4 text-[var(--text-muted)]" />
                 Disconnect Gmail
@@ -215,7 +215,7 @@ function AccountMenu({
               <a
                 role="menuitem"
                 href="/api/auth/login"
-                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-[var(--text-secondary)] transition hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
+                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm text-[var(--text-secondary)] transition hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
               >
                 <IconLogout className="h-4 w-4 text-[var(--text-muted)]" />
                 Connect Gmail
@@ -227,7 +227,7 @@ function AccountMenu({
                 setOpen(false);
                 onLock();
               }}
-              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-[var(--text-secondary)] transition hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm text-[var(--text-secondary)] transition hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
             >
               <IconLock className="h-4 w-4 text-[var(--text-muted)]" />
               Lock app
@@ -258,20 +258,22 @@ export function Navbar({
 
   return (
     <header className="navbar sticky top-0 z-40">
-      <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:px-6 md:h-16">
-        <div className="flex shrink-0 items-center gap-2.5">
-          <Logo size={28} idSuffix="nav" />
-          <span className="text-[15px] font-semibold tracking-tight text-[var(--text-primary)]">
+      <div className="mx-auto flex h-[var(--nav-bar-h)] max-w-6xl items-center gap-3 px-4 sm:px-6">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="shrink-0">
+            <Logo size={28} idSuffix="nav" />
+          </span>
+          <span className="truncate text-[15px] font-semibold tracking-tight text-[var(--text-primary)]">
             Greenlight
           </span>
-          <span className="hidden rounded border border-[var(--border)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)] sm:inline">
+          <span className="hidden shrink-0 rounded border border-[var(--border)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)] sm:inline">
             beta
           </span>
         </div>
 
         <nav
           aria-label="Primary"
-          className="ml-4 hidden items-center gap-1 md:flex"
+          className="ml-4 hidden shrink-0 items-center gap-1 md:flex"
         >
           <Tab
             active={view === "dashboard"}
@@ -297,7 +299,7 @@ export function Navbar({
           />
         </nav>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           {connected && (
             <SearchField
               query={query}
@@ -308,11 +310,15 @@ export function Navbar({
           {connected && (
             <button
               onClick={() => setMobileSearch(!mobileSearch)}
-              aria-label="Search"
+              aria-label={mobileSearch ? "Close search" : "Search"}
               aria-expanded={mobileSearch}
-              className="rounded-lg border border-[var(--border)] p-2 text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] md:hidden"
+              className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] md:hidden"
             >
-              <IconSearch className="h-4 w-4" />
+              {mobileSearch ? (
+                <IconX className="h-4 w-4" />
+              ) : (
+                <IconSearch className="h-4 w-4" />
+              )}
             </button>
           )}
           {connected ? (
@@ -321,7 +327,7 @@ export function Navbar({
               disabled={loading}
               aria-label="Sync inbox"
               title="Sync inbox"
-              className="rounded-lg border border-[var(--border)] p-2 text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] disabled:opacity-50"
+              className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] disabled:opacity-50 md:h-9 md:w-9"
             >
               <IconRefresh
                 className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
@@ -330,7 +336,7 @@ export function Navbar({
           ) : (
             <a
               href="/api/auth/login"
-              className="accent hidden rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition hover:brightness-110 sm:inline-flex"
+              className="accent hidden shrink-0 items-center rounded-lg px-3 py-2.5 text-xs font-semibold text-white transition hover:brightness-110 sm:inline-flex md:py-1.5"
             >
               Connect Gmail
             </a>
@@ -345,7 +351,7 @@ export function Navbar({
       </div>
 
       <div className="border-t border-[var(--border)] md:hidden">
-        <div className="mx-auto flex h-11 max-w-6xl items-center gap-1 overflow-x-auto px-4">
+        <div className="mx-auto flex h-[var(--nav-tabs-h)] max-w-6xl items-center gap-1 overflow-x-auto px-4">
           {mobileSearch && connected ? (
             <SearchField
               query={query}
@@ -389,8 +395,8 @@ export function Footer() {
   return (
     <footer className="footer-bar mt-12">
       <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 py-6 text-xs text-[var(--text-muted)] sm:flex-row sm:px-6">
-        <p>Greenlight — Leave Command Center · © 2026</p>
-        <div className="flex items-center gap-5">
+        <p className="text-center">Greenlight — Leave Command Center · © 2026</p>
+        <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
           <a
             href="https://github.com/AnkitPorwal04/greenlight"
             target="_blank"

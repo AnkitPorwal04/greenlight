@@ -243,7 +243,7 @@ export default function Home() {
         ) : (
           <>
             <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-              <div>
+              <div className="min-w-0">
                 <h1 className="text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
                   {copy.title}
                 </h1>
@@ -254,7 +254,7 @@ export default function Home() {
               {view === "dashboard" && pending.length > 0 && (
                 <button
                   onClick={markAllHandled}
-                  className="rounded-lg border border-[var(--border)] px-3 py-2 text-xs font-medium text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+                  className="shrink-0 rounded-lg border border-[var(--border)] px-3 py-2.5 text-xs font-medium text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] md:py-2"
                 >
                   Mark all {pending.length} as handled
                 </button>
@@ -336,7 +336,7 @@ export default function Home() {
                 <div className="space-y-6">
                   {groups.map((group) => (
                     <div key={group.key}>
-                      <div className="sticky-date sticky top-[101px] z-20 flex items-center gap-2.5 py-2 md:top-16">
+                      <div className="sticky-date sticky top-[var(--nav-h)] z-20 flex items-center gap-2.5 py-2">
                         <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                           {group.label}
                         </h3>
