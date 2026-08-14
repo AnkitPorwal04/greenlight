@@ -42,7 +42,6 @@ export async function POST(req: NextRequest) {
     const sent = await sendDecisionMail(client, {
       request,
       action,
-      note,
       to,
       cc: cc ?? [],
     });

@@ -72,21 +72,6 @@ export function DecisionModal({
           </div>
         )}
 
-        <label className="block">
-          <FieldLabel>Personal note (optional)</FieldLabel>
-          <textarea
-            value={modal.note}
-            onChange={(e) => onChange({ ...modal, note: e.target.value })}
-            rows={3}
-            placeholder={
-              approving
-                ? "e.g. Stay safe in the rain!"
-                : "e.g. We have a client demo that day"
-            }
-            className="field w-full resize-none rounded-lg px-3 py-2 text-sm transition"
-          />
-        </label>
-
         <MailPreview modal={modal} />
 
         {modal.error && (
@@ -129,12 +114,11 @@ function MailPreview({ modal }: { modal: ModalState }) {
   const { subject, body } = composeDecisionMail({
     request: modal.request,
     action: modal.action,
-    note: modal.note.trim() || undefined,
   });
 
   return (
     <div>
-      <FieldLabel>Mail preview — exactly what will be sent</FieldLabel>
+      <FieldLabel>Mail preview</FieldLabel>
       <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-raised)]">
         <p className="border-b border-[var(--border)] px-3 py-2 text-xs font-semibold text-[var(--text-primary)]">
           {subject}
@@ -143,6 +127,9 @@ function MailPreview({ modal }: { modal: ModalState }) {
           {body}
         </pre>
       </div>
+      <p className="mt-1.5 text-[11px] text-[var(--text-muted)]">
+        Your Gmail signature is appended automatically.
+      </p>
     </div>
   );
 }
