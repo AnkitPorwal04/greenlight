@@ -52,10 +52,12 @@ export function RequestRow({
   request: r,
   onDecide,
   onMark,
+  onViewEmail,
 }: {
   request: LeaveRequest;
   onDecide: (action: Action) => void;
   onMark: () => void;
+  onViewEmail: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const isPending = r.status === "pending";
@@ -174,6 +176,15 @@ export function RequestRow({
                   </dd>
                 </div>
               )}
+              <div className="sm:col-span-2">
+                <button
+                  onClick={onViewEmail}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+                >
+                  <IconMail className="h-3.5 w-3.5" />
+                  View email
+                </button>
+              </div>
             </dl>
           )}
         </div>

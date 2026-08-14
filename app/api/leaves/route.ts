@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { gmail_v1 } from "@googleapis/gmail";
 import { getAuthorizedClient, getGmail } from "@/lib/google";
-import { parseLeaveMail } from "@/lib/parser";
+import { parseLeaveMail, extractBodyText } from "@/lib/parser";
 import { loadDecisions, saveDecision } from "@/lib/store";
 import { loadEmployees } from "@/lib/employees";
 import type { LeaveRequest } from "@/lib/types";
@@ -109,6 +109,7 @@ export async function GET() {
         ...parsed,
         employeeEmail,
         emailVerified: Boolean(directoryEntry),
+        bodyText: extractBodyText(msg),
         receivedAt: new Date(receivedMs).toISOString(),
         status: decision?.status ?? "pending",
         decidedAt: decision?.decidedAt,

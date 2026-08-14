@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DecisionModal } from "./components/DecisionModal";
 import { DirectoryModal } from "./components/DirectoryModal";
+import { EmailModal } from "./components/EmailModal";
 import { RequestRow } from "./components/RequestRow";
 import { MobileNav, MobileTopBar, Sidebar } from "./components/Shell";
 import { StatTile } from "./components/StatTile";
@@ -47,6 +48,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState | null>(null);
+  const [emailModal, setEmailModal] = useState<LeaveRequest | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [view, setView] = useState<View>("dashboard");
   const [showDirectory, setShowDirectory] = useState(false);
@@ -337,6 +339,7 @@ export default function Home() {
                                 })
                               }
                               onMark={() => markHandled([r.id])}
+                              onViewEmail={() => setEmailModal(r)}
                             />
                           ))}
                         </div>
@@ -356,6 +359,13 @@ export default function Home() {
           onChange={setModal}
           onConfirm={confirmDecision}
           onClose={() => !modal.sending && setModal(null)}
+        />
+      )}
+
+      {emailModal && (
+        <EmailModal
+          request={emailModal}
+          onClose={() => setEmailModal(null)}
         />
       )}
 

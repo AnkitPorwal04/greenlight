@@ -17,6 +17,7 @@ export interface LeaveRequest {
   receivedAt: string;
   ccRecipients: string[];
   emailVerified: boolean;
+  bodyText: string;
   status: LeaveStatus;
   decidedAt?: string;
   decisionNote?: string;
