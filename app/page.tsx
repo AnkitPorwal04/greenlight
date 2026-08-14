@@ -5,7 +5,7 @@ import { DecisionModal } from "./components/DecisionModal";
 import { DirectoryModal } from "./components/DirectoryModal";
 import { EmailModal } from "./components/EmailModal";
 import { RequestRow } from "./components/RequestRow";
-import { MobileNav, MobileTopBar, Sidebar } from "./components/Shell";
+import { Footer, Navbar } from "./components/Shell";
 import { StatTile } from "./components/StatTile";
 import {
   ConnectHero,
@@ -19,7 +19,6 @@ import {
   IconCheckCircle,
   IconClock,
   IconInbox,
-  IconSearch,
   IconXCircle,
 } from "./components/icons";
 import {
@@ -187,13 +186,43 @@ export default function Home() {
     }
   };
 
+  const disconnectGmail = async () => {
+    try {
+      const res = await fetch("/api/auth/status", { method: "DELETE" });
+      if (!res.ok) {
+        setToast("Could not disconnect the account");
+        return;
+      }
+      setAuth({ connected: false });
+      setRequests([]);
+      setFetchError(null);
+      setQuery("");
+      setView("dashboard");
+      setModal(null);
+      setEmailModal(null);
+      setShowDirectory(false);
+      setToast("Gmail disconnected — connect another account to continue");
+    } catch {
+      setToast("Network error");
+    }
+  };
+
+  const lockApp = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      setToast("Could not reach the server");
+    }
+    window.location.href = "/login";
+  };
+
   const connected = auth?.connected === true;
   const copy = PAGE_COPY[view];
   const showSkeleton = !auth || (loading && requests.length === 0);
 
   return (
-    <div className="app-bg min-h-screen flex-1">
-      <Sidebar
+    <div className="app-bg flex min-h-screen flex-1 flex-col">
+      <Navbar
         view={view}
         onView={setView}
         onDirectory={() => setShowDirectory(true)}
@@ -202,156 +231,149 @@ export default function Home() {
         auth={auth}
         loading={loading}
         onSync={loadRequests}
+        query={query}
+        onQuery={setQuery}
+        onDisconnect={disconnectGmail}
+        onLock={lockApp}
       />
-      <MobileTopBar auth={auth} loading={loading} onSync={loadRequests} />
 
-      <div className="lg:pl-60">
-        <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          {auth && !connected ? (
-            <ConnectHero />
-          ) : (
-            <>
-              <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-                <div>
-                  <h1 className="text-xl font-semibold tracking-tight text-[var(--text-primary)]">
-                    {copy.title}
-                  </h1>
-                  <p className="mt-1 text-sm text-[var(--text-muted)]">
-                    {copy.subtitle}
-                  </p>
-                </div>
-                {view === "dashboard" && pending.length > 0 && (
-                  <button
-                    onClick={markAllHandled}
-                    className="rounded-lg border border-[var(--border)] px-3 py-2 text-xs font-medium text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
-                  >
-                    Mark all {pending.length} as handled
-                  </button>
-                )}
-              </div>
-
-              <MobileNav
-                view={view}
-                onView={setView}
-                onDirectory={() => setShowDirectory(true)}
-                pendingCount={stats.pending}
-                historyCount={history.length}
-              />
-
-              <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <StatTile
-                  label="Pending"
-                  value={stats.pending}
-                  tone="amber"
-                  loading={showSkeleton}
-                  icon={<IconClock />}
-                />
-                <StatTile
-                  label="Approved"
-                  value={stats.approved}
-                  tone="emerald"
-                  loading={showSkeleton}
-                  icon={<IconCheckCircle />}
-                />
-                <StatTile
-                  label="Rejected"
-                  value={stats.rejected}
-                  tone="rose"
-                  loading={showSkeleton}
-                  icon={<IconXCircle />}
-                />
-                <StatTile
-                  label="Total"
-                  value={stats.total}
-                  tone="indigo"
-                  loading={showSkeleton}
-                  icon={<IconInbox />}
-                />
-              </section>
-
-              {fetchError && (
-                <p className="mt-4 flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-[var(--c-rose)]">
-                  <IconAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                  {fetchError}
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-7 sm:px-6 lg:py-9">
+        {auth && !connected ? (
+          <ConnectHero />
+        ) : (
+          <>
+            <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
+                  {copy.title}
+                </h1>
+                <p className="mt-1 text-sm text-[var(--text-muted)]">
+                  {copy.subtitle}
                 </p>
-              )}
-
-              <div className="mt-6 flex items-center gap-3">
-                <div className="relative flex-1 sm:max-w-xs">
-                  <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
-                  <input
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search name or employee code"
-                    aria-label="Search requests"
-                    className="field w-full rounded-lg py-2 pl-9 pr-3 text-sm transition"
-                  />
-                </div>
-                <span className="text-xs tabular-nums text-[var(--text-muted)]">
-                  {filtered.length} of {visible.length}
-                </span>
               </div>
+              {view === "dashboard" && pending.length > 0 && (
+                <button
+                  onClick={markAllHandled}
+                  className="rounded-lg border border-[var(--border)] px-3 py-2 text-xs font-medium text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+                >
+                  Mark all {pending.length} as handled
+                </button>
+              )}
+            </div>
 
-              <section className="mt-5">
-                {showSkeleton ? (
-                  <SkeletonList />
-                ) : groups.length === 0 ? (
-                  query.trim() ? (
-                    <EmptyState
-                      emoji="🔍"
-                      title="No requests match your search"
-                      hint={`Nothing here for “${query.trim()}”.`}
-                    />
-                  ) : view === "dashboard" ? (
-                    <InboxZero count={history.length} />
-                  ) : (
-                    <EmptyState
-                      emoji="🗂️"
-                      title="No decisions yet"
-                      hint="Approvals and rejections will show up here."
-                    />
-                  )
+            <section
+              aria-label="Overview"
+              className="grid grid-cols-2 gap-3 lg:grid-cols-4"
+            >
+              <StatTile
+                label="Pending"
+                value={stats.pending}
+                tone="amber"
+                loading={showSkeleton}
+                icon={<IconClock />}
+              />
+              <StatTile
+                label="Approved"
+                value={stats.approved}
+                tone="emerald"
+                loading={showSkeleton}
+                icon={<IconCheckCircle />}
+              />
+              <StatTile
+                label="Rejected"
+                value={stats.rejected}
+                tone="rose"
+                loading={showSkeleton}
+                icon={<IconXCircle />}
+              />
+              <StatTile
+                label="Total"
+                value={stats.total}
+                tone="indigo"
+                loading={showSkeleton}
+                icon={<IconInbox />}
+              />
+            </section>
+
+            {fetchError && (
+              <p className="mt-4 flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-[var(--c-rose)]">
+                <IconAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                {fetchError}
+              </p>
+            )}
+
+            <div className="mt-8 flex items-center justify-between gap-3 border-b border-[var(--border)] pb-3">
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+                {view === "dashboard" ? "Awaiting decision" : "Decision log"}
+              </h2>
+              <span className="text-xs tabular-nums text-[var(--text-muted)]">
+                {query.trim()
+                  ? `${filtered.length} of ${visible.length}`
+                  : `${visible.length} ${visible.length === 1 ? "request" : "requests"}`}
+              </span>
+            </div>
+
+            <section className="mt-5">
+              {showSkeleton ? (
+                <SkeletonList />
+              ) : groups.length === 0 ? (
+                query.trim() ? (
+                  <EmptyState
+                    emoji="🔍"
+                    title="No requests match your search"
+                    hint={`Nothing here for “${query.trim()}”.`}
+                  />
+                ) : view === "dashboard" ? (
+                  <InboxZero count={history.length} />
                 ) : (
-                  <div className="space-y-6">
-                    {groups.map((group) => (
-                      <div key={group.key}>
-                        <div className="sticky-date sticky top-14 z-20 flex items-center gap-2.5 py-2 lg:top-0">
-                          <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-                            {group.label}
-                          </h2>
-                          <span className="rounded bg-[var(--surface-raised)] px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-[var(--text-secondary)]">
-                            {group.items.length}
-                          </span>
-                          <span className="h-px flex-1 bg-[var(--border)]" />
-                        </div>
-                        <div className="panel divide-y divide-[var(--border)] overflow-hidden rounded-xl">
-                          {group.items.map((r) => (
-                            <RequestRow
-                              key={r.id}
-                              request={r}
-                              onDecide={(action) =>
-                                setModal({
-                                  request: r,
-                                  action,
-                                  to: r.employeeEmail,
-                                  note: "",
-                                  sending: false,
-                                })
-                              }
-                              onMark={() => markHandled([r.id])}
-                              onViewEmail={() => setEmailModal(r)}
-                            />
-                          ))}
-                        </div>
+                  <EmptyState
+                    emoji="🗂️"
+                    title="No decisions yet"
+                    hint="Approvals and rejections will show up here."
+                  />
+                )
+              ) : (
+                <div className="space-y-6">
+                  {groups.map((group) => (
+                    <div key={group.key}>
+                      <div className="sticky-date sticky top-[101px] z-20 flex items-center gap-2.5 py-2 md:top-16">
+                        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+                          {group.label}
+                        </h3>
+                        <span className="rounded bg-[var(--surface-raised)] px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-[var(--text-secondary)]">
+                          {group.items.length}
+                        </span>
+                        <span className="h-px flex-1 bg-[var(--border)]" />
                       </div>
-                    ))}
-                  </div>
-                )}
-              </section>
-            </>
-          )}
-        </main>
-      </div>
+                      <div className="panel divide-y divide-[var(--border)] overflow-hidden rounded-xl">
+                        {group.items.map((r) => (
+                          <RequestRow
+                            key={r.id}
+                            request={r}
+                            onDecide={(action) =>
+                              setModal({
+                                request: r,
+                                action,
+                                to: r.employeeEmail,
+                                note: "",
+                                sending: false,
+                              })
+                            }
+                            onMark={() => markHandled([r.id])}
+                            onViewEmail={() => setEmailModal(r)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </>
+        )}
+      </main>
+
+      <Footer />
 
       {modal && (
         <DecisionModal
@@ -363,10 +385,7 @@ export default function Home() {
       )}
 
       {emailModal && (
-        <EmailModal
-          request={emailModal}
-          onClose={() => setEmailModal(null)}
-        />
+        <EmailModal request={emailModal} onClose={() => setEmailModal(null)} />
       )}
 
       {showDirectory && (

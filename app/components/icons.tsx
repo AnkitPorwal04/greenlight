@@ -383,6 +383,55 @@ export function Logo({
   );
 }
 
+export function IconLock({ className }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={base(className)}
+      aria-hidden="true"
+    >
+      <rect x="4.5" y="10.5" width="15" height="9.5" rx="2.4" />
+      <path d="M8 10.5V8a4 4 0 018 0v2.5" />
+    </svg>
+  );
+}
+
+export function IconLogout({ className }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={base(className)}
+      aria-hidden="true"
+    >
+      <path d="M14.5 4.5h3a2 2 0 012 2v11a2 2 0 01-2 2h-3" />
+      <path d="M9.5 8.5L5.5 12l4 3.5M5.5 12h9" />
+    </svg>
+  );
+}
+
+export function IconGithub({ className }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className={base(className)}
+      aria-hidden="true"
+    >
+      <path d="M12 2.2a9.8 9.8 0 00-3.1 19.1c.49.09.67-.21.67-.47l-.01-1.83c-2.73.59-3.3-1.15-3.3-1.15-.45-1.14-1.09-1.44-1.09-1.44-.9-.61.07-.6.07-.6 1 .07 1.52 1.02 1.52 1.02.88 1.51 2.31 1.07 2.88.82.09-.64.34-1.07.63-1.32-2.18-.25-4.48-1.09-4.48-4.86 0-1.07.39-1.95 1.02-2.64-.1-.25-.44-1.26.1-2.62 0 0 .83-.27 2.73 1.01a9.4 9.4 0 014.96 0c1.9-1.28 2.73-1.01 2.73-1.01.54 1.36.2 2.37.1 2.62.63.69 1.02 1.57 1.02 2.64 0 3.78-2.31 4.61-4.5 4.85.35.31.67.91.67 1.85l-.01 2.74c0 .26.18.57.68.47A9.8 9.8 0 0012 2.2z" />
+    </svg>
+  );
+}
+
 export function IconArrowRight({ className }: IconProps) {
   return (
     <svg

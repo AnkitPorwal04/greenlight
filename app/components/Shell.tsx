@@ -1,97 +1,245 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  IconGithub,
   IconGrid,
   IconHistory,
+  IconLock,
+  IconLogout,
   IconRefresh,
+  IconSearch,
   IconUsers,
+  IconX,
   Logo,
 } from "./icons";
-import { ThemeToggle, ThemeToggleIcon } from "./ThemeToggle";
+import { ThemeToggleIcon } from "./ThemeToggle";
 import type { AuthState, View } from "./utils";
 
-interface NavProps {
+interface NavbarProps {
   view: View;
   onView: (v: View) => void;
   onDirectory: () => void;
   pendingCount: number;
   historyCount: number;
-}
-
-interface ShellProps extends NavProps {
   auth: AuthState | null;
   loading: boolean;
   onSync: () => void;
+  query: string;
+  onQuery: (q: string) => void;
+  onDisconnect: () => void;
+  onLock: () => void;
 }
 
-function NavItem({
+function Badge({ count, active }: { count: number; active?: boolean }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      className={`rounded-md px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${
+        active
+          ? "bg-[var(--accent-soft)] text-[var(--accent)]"
+          : "bg-[var(--surface-raised)] text-[var(--text-muted)]"
+      }`}
+    >
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
+function Tab({
   active,
   icon,
   label,
   badge,
+  disabled,
   onClick,
 }: {
   active?: boolean;
   icon: ReactNode;
   label: string;
   badge?: number;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       aria-current={active ? "page" : undefined}
-      className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
+      className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
         active
           ? "bg-[var(--surface-raised)] text-[var(--text-primary)]"
           : "text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
       }`}
     >
       <span
-        className={
-          active ? "text-[var(--accent)]" : "text-[var(--text-muted)]"
-        }
+        className={active ? "text-[var(--accent)]" : "text-[var(--text-muted)]"}
       >
         {icon}
       </span>
-      <span className="flex-1 text-left">{label}</span>
-      {badge !== undefined && badge > 0 && (
-        <span
-          className={`rounded-md px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${
-            active
-              ? "bg-[var(--accent-soft)] text-[var(--accent)]"
-              : "bg-[var(--surface-raised)] text-[var(--text-muted)]"
-          }`}
-        >
-          {badge}
-        </span>
-      )}
+      {label}
+      <Badge count={badge ?? 0} active={active} />
     </button>
   );
 }
 
-function Wordmark({
-  compact,
-  idSuffix,
+function SearchField({
+  query,
+  onQuery,
+  autoFocus,
+  className,
 }: {
-  compact?: boolean;
-  idSuffix: string;
+  query: string;
+  onQuery: (q: string) => void;
+  autoFocus?: boolean;
+  className?: string;
 }) {
   return (
-    <div className="flex items-center gap-2.5">
-      <Logo size={28} idSuffix={idSuffix} />
-      <span className="text-[15px] font-semibold tracking-tight text-[var(--text-primary)]">
-        Greenlight
-      </span>
-      {!compact && (
-        <span className="rounded border border-[var(--border)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)]">
-          beta
-        </span>
+    <div className={`relative ${className ?? ""}`}>
+      <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+      <input
+        value={query}
+        onChange={(e) => onQuery(e.target.value)}
+        autoFocus={autoFocus}
+        placeholder="Search name or code"
+        aria-label="Search requests"
+        className="field w-full rounded-lg py-1.5 pl-9 pr-8 text-sm transition"
+      />
+      {query && (
+        <button
+          onClick={() => onQuery("")}
+          aria-label="Clear search"
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--text-muted)] transition hover:text-[var(--text-primary)]"
+        >
+          <IconX className="h-3.5 w-3.5" />
+        </button>
       )}
     </div>
   );
 }
 
-export function Sidebar({
+function AccountMenu({
+  auth,
+  onDisconnect,
+  onLock,
+}: {
+  auth: AuthState | null;
+  onDisconnect: () => void;
+  onLock: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const connected = auth?.connected === true;
+  const email = auth?.email ?? "";
+  const initial = email.trim().charAt(0).toUpperCase() || "?";
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Account menu"
+        title={connected ? email : "Not connected"}
+        className={`relative flex h-9 w-9 items-center justify-center rounded-full border text-sm font-semibold transition ${
+          open
+            ? "border-[var(--accent-ring)] bg-[var(--accent-soft)] text-[var(--accent)]"
+            : "border-[var(--border)] bg-[var(--surface-raised)] text-[var(--text-secondary)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+        }`}
+      >
+        {initial}
+        <span
+          className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--surface)] ${
+            connected ? "bg-emerald-500" : "bg-[var(--text-muted)]"
+          }`}
+        />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="menu-pop rise-in absolute right-0 top-11 z-50 w-64 overflow-hidden rounded-xl"
+        >
+          <div className="border-b border-[var(--border)] px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+              {connected ? "Connected account" : "Account"}
+            </p>
+            <div className="mt-1.5 flex items-center gap-2">
+              <span
+                className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                  connected ? "bg-emerald-500" : "bg-[var(--text-muted)]"
+                }`}
+              />
+              <span
+                title={email}
+                className="truncate text-sm text-[var(--text-primary)]"
+              >
+                {connected ? email || "Gmail" : "No Gmail connected"}
+              </span>
+            </div>
+          </div>
+
+          <div className="p-1.5">
+            {connected ? (
+              <button
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  onDisconnect();
+                }}
+                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-[var(--text-secondary)] transition hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
+              >
+                <IconLogout className="h-4 w-4 text-[var(--text-muted)]" />
+                Disconnect Gmail
+              </button>
+            ) : (
+              <a
+                role="menuitem"
+                href="/api/auth/login"
+                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-[var(--text-secondary)] transition hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
+              >
+                <IconLogout className="h-4 w-4 text-[var(--text-muted)]" />
+                Connect Gmail
+              </a>
+            )}
+            <button
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onLock();
+              }}
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-[var(--text-secondary)] transition hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
+            >
+              <IconLock className="h-4 w-4 text-[var(--text-muted)]" />
+              Lock app
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function Navbar({
   view,
   onView,
   onDirectory,
@@ -100,163 +248,164 @@ export function Sidebar({
   auth,
   loading,
   onSync,
-}: ShellProps) {
+  query,
+  onQuery,
+  onDisconnect,
+  onLock,
+}: NavbarProps) {
+  const [mobileSearch, setMobileSearch] = useState(false);
+  const connected = auth?.connected === true;
+
   return (
-    <aside className="rail fixed inset-y-0 left-0 z-30 hidden w-60 flex-col lg:flex">
-      <div className="flex h-14 shrink-0 items-center border-b border-[var(--border)] px-4">
-        <Wordmark idSuffix="sidebar" />
-      </div>
+    <header className="navbar sticky top-0 z-40">
+      <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:px-6 md:h-16">
+        <div className="flex shrink-0 items-center gap-2.5">
+          <Logo size={28} idSuffix="nav" />
+          <span className="text-[15px] font-semibold tracking-tight text-[var(--text-primary)]">
+            Greenlight
+          </span>
+          <span className="hidden rounded border border-[var(--border)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)] sm:inline">
+            beta
+          </span>
+        </div>
 
-      <nav className="flex-1 space-y-1 p-3">
-        <p className="px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-          Workspace
-        </p>
-        <NavItem
-          active={view === "dashboard"}
-          icon={<IconGrid />}
-          label="Dashboard"
-          badge={pendingCount}
-          onClick={() => onView("dashboard")}
-        />
-        <NavItem
-          active={view === "history"}
-          icon={<IconHistory />}
-          label="History"
-          badge={historyCount}
-          onClick={() => onView("history")}
-        />
-        <NavItem
-          icon={<IconUsers />}
-          label="Directory"
-          onClick={onDirectory}
-        />
-      </nav>
+        <nav
+          aria-label="Primary"
+          className="ml-4 hidden items-center gap-1 md:flex"
+        >
+          <Tab
+            active={view === "dashboard"}
+            icon={<IconGrid />}
+            label="Dashboard"
+            badge={pendingCount}
+            disabled={!connected}
+            onClick={() => onView("dashboard")}
+          />
+          <Tab
+            active={view === "history"}
+            icon={<IconHistory />}
+            label="History"
+            badge={historyCount}
+            disabled={!connected}
+            onClick={() => onView("history")}
+          />
+          <Tab
+            icon={<IconUsers />}
+            label="Directory"
+            disabled={!connected}
+            onClick={onDirectory}
+          />
+        </nav>
 
-      <div className="space-y-3 border-t border-[var(--border)] p-3">
-        {auth?.connected ? (
-          <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-              Connected account
-            </p>
-            <div className="mt-2 flex items-center gap-2">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-              <span
-                title={auth.email}
-                className="truncate text-xs text-[var(--text-secondary)]"
-              >
-                {auth.email ?? "Gmail"}
-              </span>
-            </div>
+        <div className="ml-auto flex items-center gap-2">
+          {connected && (
+            <SearchField
+              query={query}
+              onQuery={onQuery}
+              className="hidden w-56 md:block lg:w-72"
+            />
+          )}
+          {connected && (
             <button
-              onClick={onSync}
-              disabled={loading}
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 text-xs font-medium text-[var(--text-primary)] transition hover:border-[var(--border-strong)] disabled:opacity-50"
+              onClick={() => setMobileSearch(!mobileSearch)}
+              aria-label="Search"
+              aria-expanded={mobileSearch}
+              className="rounded-lg border border-[var(--border)] p-2 text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] md:hidden"
             >
-              <IconRefresh
-                className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
-              />
-              {loading ? "Syncing" : "Sync inbox"}
+              <IconSearch className="h-4 w-4" />
             </button>
-          </div>
-        ) : (
-          <a
-            href="/api/auth/login"
-            className="accent flex w-full items-center justify-center rounded-lg px-3 py-2 text-xs font-semibold text-white transition hover:brightness-110"
-          >
-            Connect Gmail
-          </a>
-        )}
-        <ThemeToggle />
-      </div>
-    </aside>
-  );
-}
-
-export function MobileTopBar({
-  auth,
-  loading,
-  onSync,
-}: {
-  auth: AuthState | null;
-  loading: boolean;
-  onSync: () => void;
-}) {
-  return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[var(--border)] bg-[var(--rail)] px-4 lg:hidden">
-      <Wordmark compact idSuffix="mobile" />
-      <div className="flex items-center gap-2">
-        {auth?.connected ? (
-          <>
-            <span
-              title={auth.email}
-              className="hidden items-center gap-1.5 rounded-md border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-secondary)] sm:flex"
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              <span className="max-w-32 truncate">{auth.email}</span>
-            </span>
+          )}
+          {connected ? (
             <button
               onClick={onSync}
               disabled={loading}
               aria-label="Sync inbox"
+              title="Sync inbox"
               className="rounded-lg border border-[var(--border)] p-2 text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] disabled:opacity-50"
             >
               <IconRefresh
                 className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
               />
             </button>
-          </>
-        ) : (
-          <a
-            href="/api/auth/login"
-            className="accent rounded-lg px-3 py-1.5 text-xs font-semibold text-white"
-          >
-            Connect Gmail
-          </a>
-        )}
-        <ThemeToggleIcon />
+          ) : (
+            <a
+              href="/api/auth/login"
+              className="accent hidden rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition hover:brightness-110 sm:inline-flex"
+            >
+              Connect Gmail
+            </a>
+          )}
+          <ThemeToggleIcon />
+          <AccountMenu
+            auth={auth}
+            onDisconnect={onDisconnect}
+            onLock={onLock}
+          />
+        </div>
+      </div>
+
+      <div className="border-t border-[var(--border)] md:hidden">
+        <div className="mx-auto flex h-11 max-w-6xl items-center gap-1 overflow-x-auto px-4">
+          {mobileSearch && connected ? (
+            <SearchField
+              query={query}
+              onQuery={onQuery}
+              autoFocus
+              className="w-full"
+            />
+          ) : (
+            <>
+              <Tab
+                active={view === "dashboard"}
+                icon={<IconGrid />}
+                label="Dashboard"
+                badge={pendingCount}
+                disabled={!connected}
+                onClick={() => onView("dashboard")}
+              />
+              <Tab
+                active={view === "history"}
+                icon={<IconHistory />}
+                label="History"
+                badge={historyCount}
+                disabled={!connected}
+                onClick={() => onView("history")}
+              />
+              <Tab
+                icon={<IconUsers />}
+                label="Directory"
+                disabled={!connected}
+                onClick={onDirectory}
+              />
+            </>
+          )}
+        </div>
       </div>
     </header>
   );
 }
 
-export function MobileNav({
-  view,
-  onView,
-  onDirectory,
-  pendingCount,
-  historyCount,
-}: NavProps) {
-  const tabs: { key: View; label: string; count: number }[] = [
-    { key: "dashboard", label: "Dashboard", count: pendingCount },
-    { key: "history", label: "History", count: historyCount },
-  ];
+export function Footer() {
   return (
-    <div className="mb-6 flex items-center gap-1.5 lg:hidden">
-      {tabs.map((t) => (
-        <button
-          key={t.key}
-          onClick={() => onView(t.key)}
-          className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-            view === t.key
-              ? "bg-[var(--surface-raised)] text-[var(--text-primary)]"
-              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-          }`}
-        >
-          {t.label}
-          {t.count > 0 && (
-            <span className="rounded bg-[var(--surface)] px-1.5 text-[11px] tabular-nums text-[var(--text-secondary)]">
-              {t.count}
-            </span>
-          )}
-        </button>
-      ))}
-      <button
-        onClick={onDirectory}
-        className="ml-auto flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm font-medium text-[var(--text-secondary)] transition hover:text-[var(--text-primary)]"
-      >
-        <IconUsers className="h-4 w-4" />
-        Directory
-      </button>
-    </div>
+    <footer className="footer-bar mt-12">
+      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 py-6 text-xs text-[var(--text-muted)] sm:flex-row sm:px-6">
+        <p>Greenlight — Leave Command Center · © 2026</p>
+        <div className="flex items-center gap-5">
+          <a
+            href="https://github.com/AnkitPorwal04/greenlight"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 transition hover:text-[var(--text-primary)]"
+          >
+            <IconGithub className="h-3.5 w-3.5" />
+            GitHub
+          </a>
+          <span className="flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            Powered by Gmail API
+          </span>
+        </div>
+      </div>
+    </footer>
   );
 }

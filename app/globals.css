@@ -95,6 +95,24 @@ body {
   border-right: 1px solid var(--border);
 }
 
+.navbar {
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+
+.menu-pop {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 16px 40px var(--shadow);
+}
+
+.footer-bar {
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+}
+
 .sticky-date {
   background: color-mix(in srgb, var(--bg) 92%, transparent);
   backdrop-filter: blur(6px);
