@@ -3,6 +3,12 @@ import type { LeaveRequest } from "@/lib/types";
 export type AuthState = { connected: boolean; email?: string };
 export type Action = "approved" | "rejected";
 export type View = "dashboard" | "history";
+export type ToastTone = "success" | "error";
+
+export interface ToastState {
+  message: string;
+  tone?: ToastTone;
+}
 
 export interface ModalState {
   request: LeaveRequest;
@@ -24,33 +30,45 @@ export function isEmail(value: string) {
 export interface DateGroup {
   key: string;
   label: string;
+  sub: string;
   items: LeaveRequest[];
 }
 
 const LEAVE_TYPE_STYLES: Record<string, string> = {
-  "work from home": "border-sky-500/30 bg-sky-500/10 text-[var(--c-sky)]",
-  "casual leave":
-    "border-violet-500/30 bg-violet-500/10 text-[var(--c-violet)]",
-  "sick leave": "border-rose-500/30 bg-rose-500/10 text-[var(--c-rose)]",
-  "earned leave": "border-amber-500/30 bg-amber-500/10 text-[var(--c-amber)]",
-  "restricted holiday":
-    "border-teal-500/30 bg-teal-500/10 text-[var(--c-teal)]",
+  "work from home": "text-[var(--c-sky)]",
+  "casual leave": "text-[var(--c-violet)]",
+  "sick leave": "text-[var(--c-pink)]",
+  "earned leave": "text-[var(--c-amber)]",
+  "restricted holiday": "text-[var(--c-teal)]",
 };
 
 const AVATAR_TONES = [
-  "bg-indigo-500/15 text-[var(--c-indigo)]",
-  "bg-emerald-500/15 text-[var(--c-emerald)]",
-  "bg-sky-500/15 text-[var(--c-sky)]",
-  "bg-amber-500/15 text-[var(--c-amber)]",
-  "bg-fuchsia-500/15 text-[var(--c-fuchsia)]",
-  "bg-teal-500/15 text-[var(--c-teal)]",
+  "bg-[var(--surface-raised)] text-[var(--text-secondary)]",
+  "bg-[var(--accent-soft)] text-[var(--accent)]",
+  "bg-[var(--surface-raised)] text-[var(--c-sky)]",
+  "bg-[var(--surface-raised)] text-[var(--c-teal)]",
+  "bg-[var(--surface-raised)] text-[var(--c-violet)]",
+  "bg-[var(--surface-raised)] text-[var(--c-amber)]",
 ];
 
 export function leaveTypeStyle(type: string) {
   return (
-    LEAVE_TYPE_STYLES[type.trim().toLowerCase()] ??
-    "border-[var(--border)] bg-[var(--surface-raised)] text-[var(--text-secondary)]"
+    LEAVE_TYPE_STYLES[type.trim().toLowerCase()] ?? "text-[var(--text-muted)]"
   );
+}
+
+export function statusLabel(status: string) {
+  if (status === "approved") return "Approved";
+  if (status === "rejected") return "Rejected";
+  if (status === "handled") return "Handled";
+  return "Pending";
+}
+
+export function statusTone(status: string) {
+  if (status === "approved") return "text-[var(--c-emerald)]";
+  if (status === "rejected") return "text-[var(--c-rose)]";
+  if (status === "pending") return "text-[var(--c-amber)]";
+  return "text-[var(--text-muted)]";
 }
 
 export function avatarTone(seed: string) {
@@ -116,6 +134,27 @@ export function dayLabel(iso: string) {
   });
 }
 
+export function daySubLabel(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d
+    .toLocaleDateString("en-GB", {
+      weekday: "short",
+      day: "2-digit",
+      month: "short",
+    })
+    .replace(/,/g, "");
+}
+
+export function dayHeading(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Undated";
+  const diff = Math.round((startOfDay(new Date()) - startOfDay(d)) / 86400000);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Yesterday";
+  return daySubLabel(iso);
+}
+
 export function groupByDate(list: LeaveRequest[]): DateGroup[] {
   const sorted = [...list].sort(
     (a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime()
@@ -126,7 +165,14 @@ export function groupByDate(list: LeaveRequest[]): DateGroup[] {
     const key = dayKey(request.receivedAt);
     let group = seen.get(key);
     if (!group) {
-      group = { key, label: dayLabel(request.receivedAt), items: [] };
+      const label = dayHeading(request.receivedAt);
+      const sub = daySubLabel(request.receivedAt);
+      group = {
+        key,
+        label,
+        sub: sub === label ? "" : sub,
+        items: [],
+      };
       seen.set(key, group);
       groups.push(group);
     }

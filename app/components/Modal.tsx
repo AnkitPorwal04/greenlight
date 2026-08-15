@@ -1,18 +1,30 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  type ReactNode,
+} from "react";
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+const ModalTitleContext = createContext<string | undefined>(undefined);
+
 export function Modal({
   children,
   onClose,
+  dismissible = true,
 }: {
   children: ReactNode;
   onClose: () => void;
+  dismissible?: boolean;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
   // Hold the latest onClose without re-running the setup effect (which would
   // steal focus back to the first field on every parent re-render / keystroke).
   const onCloseRef = useRef(onClose);
@@ -22,6 +34,8 @@ export function Modal({
 
   useEffect(() => {
     const previouslyFocused = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
 
     const focusables = () => {
       const panel = panelRef.current;
@@ -65,6 +79,7 @@ export function Modal({
     document.addEventListener("keydown", onKeyDown, true);
     return () => {
       document.removeEventListener("keydown", onKeyDown, true);
+      document.body.style.overflow = previousOverflow;
       previouslyFocused?.focus?.();
     };
   }, []);
@@ -73,16 +88,19 @@ export function Modal({
     <div
       role="dialog"
       aria-modal="true"
-      onClick={onClose}
+      aria-labelledby={titleId}
+      onClick={() => dismissible && onClose()}
       className="fixed inset-0 z-50 flex items-end justify-center bg-[var(--overlay)] p-4 backdrop-blur-[2px] sm:items-center"
     >
       <div
         ref={panelRef}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className="rise-in panel flex max-h-[85dvh] w-full max-w-lg flex-col overflow-hidden rounded-2xl shadow-2xl shadow-[var(--shadow)] outline-none"
+        className="rise-in panel flex max-h-[85dvh] w-full max-w-lg flex-col overflow-hidden rounded-xl shadow-2xl shadow-[var(--shadow)] outline-none"
       >
-        {children}
+        <ModalTitleContext.Provider value={titleId}>
+          {children}
+        </ModalTitleContext.Provider>
       </div>
     </div>
   );
@@ -95,13 +113,17 @@ export function ModalHeader({
   title: ReactNode;
   subtitle?: ReactNode;
 }) {
+  const titleId = useContext(ModalTitleContext);
   return (
-    <div className="shrink-0 border-b border-[var(--border)] px-4 py-4 sm:px-5">
-      <h2 className="break-words text-base font-semibold text-[var(--text-primary)]">
+    <div className="shrink-0 border-b border-[var(--border)] px-5 py-4">
+      <h2
+        id={titleId}
+        className="break-words text-[17px] font-semibold tracking-tight text-[var(--text-primary)]"
+      >
         {title}
       </h2>
       {subtitle && (
-        <p className="mt-1 break-words text-xs text-[var(--text-muted)]">
+        <p className="mt-1.5 break-words font-mono text-[11px] text-[var(--text-muted)]">
           {subtitle}
         </p>
       )}
@@ -119,7 +141,7 @@ export function ModalFooter({ children }: { children: ReactNode }) {
 
 export function FieldLabel({ children }: { children: ReactNode }) {
   return (
-    <span className="mb-1.5 block text-xs font-medium text-[var(--text-secondary)]">
+    <span className="mb-2 block text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">
       {children}
     </span>
   );

@@ -35,41 +35,45 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="app-bg relative flex min-h-screen flex-1 items-center justify-center px-4 py-16">
+    <main className="app-bg relative flex min-h-screen flex-1 items-center justify-center px-5 py-16">
       <div className="absolute right-4 top-4">
         <ThemeToggleIcon />
       </div>
-      <form
-        onSubmit={submit}
-        className="panel rise-in w-full max-w-sm rounded-2xl p-6 text-center sm:p-8"
-      >
-        <div className="mx-auto mb-5 flex w-fit">
-          <Logo size={44} idSuffix="login" />
+      <form onSubmit={submit} className="rise-in w-full max-w-xs">
+        <div className="flex items-center gap-2.5">
+          <Logo size={26} idSuffix="login" />
+          <h1 className="text-[22px] font-semibold tracking-[-0.03em] text-[var(--text-primary)]">
+            Greenlight
+          </h1>
         </div>
-        <h1 className="text-lg font-semibold tracking-tight text-[var(--text-primary)]">
-          Greenlight
-        </h1>
-        <p className="mt-1 text-xs text-[var(--text-muted)]">
-          Enter your passcode to access the dashboard
+        <p className="mt-6 text-[10px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
+          Passcode
         </p>
         <input
           type="password"
           value={passcode}
           onChange={(e) => setPasscode(e.target.value)}
-          placeholder="Passcode"
+          placeholder="••••••••"
           autoFocus
-          className="field mt-6 w-full rounded-lg px-4 py-2.5 text-center text-sm transition"
+          aria-label="Passcode"
+          className="field mt-2 w-full rounded-md px-3.5 py-2.5 font-mono text-[13px] tracking-[0.2em] transition"
         />
         {error && (
-          <p className="mt-3 text-xs text-[var(--c-rose)]">{error}</p>
+          <p className="mt-3 border-l-2 border-[var(--signal-red)] pl-2.5 text-[12px] text-[var(--c-rose)]">
+            {error}
+          </p>
         )}
         <button
           type="submit"
           disabled={busy || !passcode}
-          className="accent mt-5 w-full rounded-lg py-2.5 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-50"
+          className="accent press mt-5 w-full rounded-md py-2.5 text-[13px] font-semibold disabled:opacity-50"
         >
           {busy ? "Checking…" : "Unlock"}
         </button>
+        <p className="mt-6 flex items-center gap-2 font-mono text-[11px] text-[var(--text-muted)]">
+          <span className="lamp-dot lamp-green h-1.5 w-1.5" />
+          Leave approvals, straight from your inbox
+        </p>
       </form>
     </main>
   );

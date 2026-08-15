@@ -22,7 +22,7 @@ export function ConfirmModal({
     <Modal onClose={() => !busy && onClose()}>
       <ModalHeader title={title} />
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 text-sm leading-relaxed text-[var(--text-secondary)] sm:px-5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 text-[13px] leading-relaxed text-[var(--text-secondary)]">
         {message}
       </div>
 
@@ -30,17 +30,17 @@ export function ConfirmModal({
         <button
           onClick={onClose}
           disabled={busy}
-          className="min-h-10 rounded-lg px-3 py-2.5 text-sm font-medium text-[var(--text-secondary)] transition hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)] disabled:opacity-50"
+          className="press min-h-10 rounded-md px-3 py-2.5 text-[13px] font-medium text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)] disabled:opacity-50"
         >
           Cancel
         </button>
         <button
           onClick={onConfirm}
           disabled={busy}
-          className={`min-h-10 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition disabled:opacity-50 ${
+          className={`press min-h-10 rounded-md px-4 py-2.5 text-[13px] font-semibold disabled:opacity-50 ${
             tone === "danger"
-              ? "bg-rose-600 hover:bg-rose-500"
-              : "accent hover:brightness-110"
+              ? "bg-[var(--signal-red)] text-[var(--danger-on)] hover:brightness-110"
+              : "accent"
           }`}
         >
           {confirmLabel}

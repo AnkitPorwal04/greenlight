@@ -4,24 +4,6 @@ function base(className?: string) {
   return className ?? "h-4 w-4";
 }
 
-export function IconClock({ className }: IconProps) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={base(className)}
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7.5V12l2.75 1.75" />
-    </svg>
-  );
-}
-
 export function IconCheck({ className }: IconProps) {
   return (
     <svg
@@ -74,42 +56,6 @@ export function IconX({ className }: IconProps) {
   );
 }
 
-export function IconXCircle({ className }: IconProps) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={base(className)}
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="9" />
-      <path d="M9.25 9.25l5.5 5.5M14.75 9.25l-5.5 5.5" />
-    </svg>
-  );
-}
-
-export function IconInbox({ className }: IconProps) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={base(className)}
-      aria-hidden="true"
-    >
-      <path d="M3.5 13.5h4l1.5 2.5h6l1.5-2.5h4" />
-      <path d="M5.5 5h13l2 8.5v3.5a2 2 0 01-2 2h-13a2 2 0 01-2-2v-3.5z" />
-    </svg>
-  );
-}
-
 export function IconSearch({ className }: IconProps) {
   return (
     <svg
@@ -146,45 +92,6 @@ export function IconRefresh({ className }: IconProps) {
   );
 }
 
-export function IconGrid({ className }: IconProps) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={base(className)}
-      aria-hidden="true"
-    >
-      <rect x="3.5" y="3.5" width="7" height="7" rx="1.8" />
-      <rect x="13.5" y="3.5" width="7" height="7" rx="1.8" />
-      <rect x="3.5" y="13.5" width="7" height="7" rx="1.8" />
-      <rect x="13.5" y="13.5" width="7" height="7" rx="1.8" />
-    </svg>
-  );
-}
-
-export function IconHistory({ className }: IconProps) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={base(className)}
-      aria-hidden="true"
-    >
-      <path d="M4 11a8 8 0 10 2.5-5.3" />
-      <path d="M4 4.5V10h5.5" />
-      <path d="M12 8v4.5l3 1.75" />
-    </svg>
-  );
-}
-
 export function IconUsers({ className }: IconProps) {
   return (
     <svg
@@ -201,24 +108,6 @@ export function IconUsers({ className }: IconProps) {
       <path d="M3.5 19.5c0-3.2 2.7-5 6-5s6 1.8 6 5" />
       <path d="M16 5.6a3.2 3.2 0 010 5.9" />
       <path d="M18 14.9c2 .7 3.5 2.2 3.5 4.6" />
-    </svg>
-  );
-}
-
-export function IconCalendar({ className }: IconProps) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={base(className)}
-      aria-hidden="true"
-    >
-      <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
-      <path d="M3.5 9.5h17M8 3.5V6.5M16 3.5V6.5" />
     </svg>
   );
 }
@@ -276,23 +165,6 @@ export function IconChevron({ className }: IconProps) {
   );
 }
 
-export function IconMenu({ className }: IconProps) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={base(className)}
-      aria-hidden="true"
-    >
-      <path d="M4 7h16M4 12h16M4 17h16" />
-    </svg>
-  );
-}
-
 export function IconSun({ className }: IconProps) {
   return (
     <svg
@@ -335,7 +207,6 @@ export function Logo({
   size?: number;
   idSuffix?: string;
 }) {
-  const grad = `gl-badge-${idSuffix}`;
   const glow = `gl-glow-${idSuffix}`;
   return (
     <svg
@@ -348,38 +219,82 @@ export function Logo({
       className="shrink-0"
     >
       <defs>
-        <linearGradient
-          id={grad}
-          x1="2"
-          y1="1"
-          x2="30"
-          y2="31"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop stopColor="#34d399" />
-          <stop offset="0.55" stopColor="#10b981" />
-          <stop offset="1" stopColor="#0d9488" />
-        </linearGradient>
         <radialGradient id={glow} cx="0.5" cy="0.5" r="0.5">
-          <stop stopColor="#ecfdf5" stopOpacity="0.9" />
-          <stop offset="1" stopColor="#ecfdf5" stopOpacity="0" />
+          <stop stopColor="#22c55e" stopOpacity="0.55" />
+          <stop offset="1" stopColor="#22c55e" stopOpacity="0" />
         </radialGradient>
       </defs>
-      <rect width="32" height="32" rx="9" fill={`url(#${grad})`} />
+      <rect width="32" height="32" rx="8" fill="#0c110e" />
       <rect
-        x="10.25"
-        y="4.25"
-        width="11.5"
-        height="23.5"
-        rx="5.75"
-        fill="#03201a"
-        fillOpacity="0.4"
+        x="0.6"
+        y="0.6"
+        width="30.8"
+        height="30.8"
+        rx="7.4"
+        stroke="#22c55e"
+        strokeOpacity="0.22"
+        strokeWidth="1.2"
       />
-      <circle cx="16" cy="10" r="2.15" fill="#ffffff" fillOpacity="0.26" />
-      <circle cx="16" cy="16" r="2.15" fill="#ffffff" fillOpacity="0.38" />
-      <circle cx="16" cy="22" r="6" fill={`url(#${glow})`} />
-      <circle cx="16" cy="22" r="2.7" fill="#f0fff8" />
+      <circle cx="16" cy="8.6" r="2.4" fill="#3a3123" />
+      <circle cx="16" cy="16" r="2.4" fill="#3a2326" />
+      <circle cx="16" cy="23.4" r="7" fill={`url(#${glow})`} />
+      <circle cx="16" cy="23.4" r="3.1" fill="#22c55e" />
     </svg>
+  );
+}
+
+export function StatusLamp({
+  status,
+  pulse,
+  className,
+}: {
+  status: string;
+  pulse?: "approved" | "rejected";
+  className?: string;
+}) {
+  const lamps: {
+    key: string;
+    lit: string;
+    dim: string;
+    on: boolean;
+    breathe?: boolean;
+  }[] = [
+    {
+      key: "amber",
+      lit: "lamp-amber",
+      dim: "lamp-dim-amber",
+      on: !pulse && status === "pending",
+      breathe: true,
+    },
+    {
+      key: "red",
+      lit: "lamp-red",
+      dim: "lamp-dim-red",
+      on: pulse ? pulse === "rejected" : status === "rejected",
+    },
+    {
+      key: "green",
+      lit: "lamp-green",
+      dim: "lamp-dim-green",
+      on: pulse ? pulse === "approved" : status === "approved",
+    },
+  ];
+  return (
+    <span
+      aria-hidden="true"
+      className={`inline-flex flex-col items-center gap-[3px] rounded-full border border-[var(--border)] px-[3px] py-[4px] ${
+        className ?? ""
+      }`}
+    >
+      {lamps.map((l) => (
+        <span
+          key={l.key}
+          className={`lamp-dot h-[5px] w-[5px] ${l.on ? l.lit : l.dim} ${
+            l.on && l.breathe && !pulse ? "lamp-breathe" : ""
+          } ${l.on && pulse ? "lamp-pulse" : ""}`}
+        />
+      ))}
+    </span>
   );
 }
 

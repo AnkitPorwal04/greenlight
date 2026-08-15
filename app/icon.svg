@@ -11,9 +11,9 @@
     </radialGradient>
   </defs>
   <rect width="32" height="32" rx="9" fill="url(#badge)" />
-  <rect x="10.25" y="4.25" width="11.5" height="23.5" rx="5.75" fill="#03201a" fill-opacity="0.4" />
-  <circle cx="16" cy="10" r="2.15" fill="#ffffff" fill-opacity="0.26" />
-  <circle cx="16" cy="16" r="2.15" fill="#ffffff" fill-opacity="0.38" />
+  <rect x="10.25" y="4.25" width="11.5" height="23.5" rx="5.75" fill="#03201a" fill-opacity="0.62" />
+  <circle cx="16" cy="10" r="2.15" fill="#3a3123" />
+  <circle cx="16" cy="16" r="2.15" fill="#3a2326" />
   <circle cx="16" cy="22" r="6" fill="url(#glow)" />
   <circle cx="16" cy="22" r="2.7" fill="#f0fff8" />
 </svg>

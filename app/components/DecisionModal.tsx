@@ -17,9 +17,11 @@ export function DecisionModal({
 }) {
   const { request: r, action } = modal;
   const approving = action === "approved";
+  const defaultBody = composeDecisionMail({ request: r, action }).body;
+  const edited = modal.body !== defaultBody;
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={onClose} dismissible={!edited}>
       <ModalHeader
         title={
           <>
@@ -37,7 +39,7 @@ export function DecisionModal({
             value={modal.to}
             onChange={(e) => onChange({ ...modal, to: e.target.value })}
             placeholder="employee@company.com"
-            className="field w-full rounded-lg px-3 py-2.5 text-sm transition"
+            className="field w-full rounded-md px-3 py-2.5 font-mono text-[13px] transition"
           />
           <span
             className={`mt-1.5 flex items-start gap-1.5 text-[11px] ${
@@ -65,10 +67,15 @@ export function DecisionModal({
           />
         </div>
 
-        <MailBody modal={modal} onChange={onChange} />
+        <MailBody
+          modal={modal}
+          onChange={onChange}
+          defaultBody={defaultBody}
+          edited={edited}
+        />
 
         {modal.error && (
-          <p className="flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-[var(--c-rose)]">
+          <p className="flex items-start gap-2 border-l-2 border-[var(--signal-red)] py-1 pl-3 text-[12px] text-[var(--c-rose)]">
             <IconAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {modal.error}
           </p>
@@ -79,17 +86,17 @@ export function DecisionModal({
         <button
           onClick={onClose}
           disabled={modal.sending}
-          className="min-h-10 rounded-lg px-3 py-2.5 text-sm font-medium text-[var(--text-secondary)] transition hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)] disabled:opacity-50"
+          className="press min-h-10 rounded-md px-3 py-2.5 text-[13px] font-medium text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)] disabled:opacity-50"
         >
           Cancel
         </button>
         <button
           onClick={onConfirm}
           disabled={modal.sending || !modal.to.trim()}
-          className={`min-h-10 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition disabled:opacity-50 ${
+          className={`press min-h-10 rounded-md px-4 py-2.5 text-[13px] font-semibold disabled:opacity-50 ${
             approving
-              ? "bg-emerald-600 hover:bg-emerald-500"
-              : "bg-rose-600 hover:bg-rose-500"
+              ? "accent"
+              : "bg-[var(--signal-red)] text-[var(--danger-on)] hover:brightness-110"
           }`}
         >
           {modal.sending
@@ -134,11 +141,11 @@ function CcEditor({
 
   return (
     <div>
-      <div className="field flex flex-wrap gap-1.5 rounded-lg p-2">
+      <div className="field flex flex-wrap gap-1.5 rounded-md p-2">
         {cc.map((addr) => (
           <span
             key={addr}
-            className="inline-flex max-w-full items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--surface-raised)] px-2 py-1 text-[11px] text-[var(--text-secondary)]"
+            className="inline-flex max-w-full items-center gap-1 rounded bg-[var(--surface-raised)] px-2 py-1 font-mono text-[11px] text-[var(--text-secondary)]"
           >
             <span className="truncate">{addr}</span>
             <button
@@ -168,7 +175,7 @@ function CcEditor({
           onBlur={commit}
           placeholder={cc.length ? "Add more…" : "Add CC email…"}
           aria-label="Add CC recipient"
-          className="min-w-[8rem] flex-1 bg-transparent px-1 py-0.5 text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+          className="min-w-[8rem] flex-1 bg-transparent px-1 py-0.5 font-mono text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
         />
       </div>
       {warn && (
@@ -183,20 +190,23 @@ function CcEditor({
 function MailBody({
   modal,
   onChange,
+  defaultBody,
+  edited,
 }: {
   modal: ModalState;
   onChange: (m: ModalState) => void;
+  defaultBody: string;
+  edited: boolean;
 }) {
-  const { subject, body: defaultBody } = composeDecisionMail({
+  const { subject } = composeDecisionMail({
     request: modal.request,
     action: modal.action,
   });
-  const edited = modal.body !== defaultBody;
 
   return (
     <div>
-      <div className="mb-1.5 flex items-center justify-between gap-2">
-        <span className="text-xs font-medium text-[var(--text-secondary)]">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">
           Message
         </span>
         {edited && (
@@ -209,8 +219,8 @@ function MailBody({
           </button>
         )}
       </div>
-      <div className="field overflow-hidden rounded-lg">
-        <p className="break-words border-b border-[var(--border)] px-3 py-2 text-[13px] font-semibold text-[var(--text-primary)]">
+      <div className="field overflow-hidden rounded-md">
+        <p className="break-words border-b border-[var(--border)] px-3 py-2 text-[13px] font-semibold tracking-tight text-[var(--text-primary)]">
           {subject}
         </p>
         <textarea

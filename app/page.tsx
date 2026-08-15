@@ -1,33 +1,30 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { DecisionModal } from "./components/DecisionModal";
 import { DirectoryModal } from "./components/DirectoryModal";
 import { EmailModal } from "./components/EmailModal";
 import { RequestRow } from "./components/RequestRow";
 import { Footer, Navbar } from "./components/Shell";
-import { StatTile } from "./components/StatTile";
+import { StatStrip } from "./components/StatTile";
 import {
+  ArtSearch,
+  ArtTray,
   ConnectHero,
   EmptyState,
   InboxZero,
   SkeletonList,
   Toast,
 } from "./components/States";
-import {
-  IconAlert,
-  IconCheckCircle,
-  IconClock,
-  IconHistory,
-  IconSearch,
-  IconXCircle,
-} from "./components/icons";
+import { IconAlert } from "./components/icons";
 import {
   groupByDate,
   matchesQuery,
+  type Action,
   type AuthState,
   type ModalState,
+  type ToastState,
   type View,
 } from "./components/utils";
 import { composeDecisionMail } from "@/lib/compose";
@@ -44,6 +41,11 @@ const PAGE_COPY: Record<View, { title: string; subtitle: string }> = {
   },
 };
 
+const EXIT_MS = 250;
+const PULSE_MS = 220;
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export default function Home() {
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
@@ -52,23 +54,32 @@ export default function Home() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState | null>(null);
   const [emailModal, setEmailModal] = useState<LeaveRequest | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastState | null>(null);
   const [view, setView] = useState<View>("dashboard");
   const [showDirectory, setShowDirectory] = useState(false);
   const [confirmClearAll, setConfirmClearAll] = useState(false);
   const [query, setQuery] = useState("");
+  const [exiting, setExiting] = useState<string[]>([]);
+  const [pulse, setPulse] = useState<{ id: string; action: Action } | null>(
+    null
+  );
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [busyIds, setBusyIds] = useState<string[]>([]);
+  const [mobileSearch, setMobileSearch] = useState(false);
+  const loadIdRef = useRef(0);
+  const keyboardNavRef = useRef(false);
 
   const loadRequests = useCallback(async (opts?: { skeleton?: boolean }) => {
+    const loadId = loadIdRef.current + 1;
+    loadIdRef.current = loadId;
     setLoading(true);
     if (opts?.skeleton) setRefreshing(true);
     setFetchError(null);
-    // Keep the skeleton up long enough to register on a fast (e.g. cached) load.
-    const minVisible = opts?.skeleton
-      ? new Promise((resolve) => setTimeout(resolve, 450))
-      : null;
+    const minVisible = opts?.skeleton ? wait(450) : null;
     try {
       const res = await fetch("/api/leaves");
       const data = await res.json();
+      if (loadId !== loadIdRef.current) return;
       if (!res.ok) {
         if (data.error !== "not_connected") setFetchError(data.error);
         setRequests([]);
@@ -76,12 +87,22 @@ export default function Home() {
       }
       setRequests(data.requests);
     } catch {
-      setFetchError("Could not reach the server");
+      if (loadId === loadIdRef.current) {
+        setFetchError("Could not reach the server");
+      }
     } finally {
       if (minVisible) await minVisible;
-      setLoading(false);
-      setRefreshing(false);
+      if (loadId === loadIdRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+        setExiting([]);
+        setPulse(null);
+      }
     }
+  }, []);
+
+  const releaseBusy = useCallback((ids: string[]) => {
+    setBusyIds((prev) => prev.filter((id) => !ids.includes(id)));
   }, []);
 
   useEffect(() => {
@@ -132,62 +153,87 @@ export default function Home() {
   );
   const groups = useMemo(() => groupByDate(filtered), [filtered]);
 
-  const markHandled = async (ids: string[]) => {
-    try {
-      const res = await fetch("/api/mark", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids }),
-      });
-      if (!res.ok) {
-        setToast("Failed to mark as handled");
-        return;
+  const markHandled = useCallback(
+    async (ids: string[]) => {
+      if (ids.length === 0) return;
+      setBusyIds((prev) => [...new Set([...prev, ...ids])]);
+      try {
+        const res = await fetch("/api/mark", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids }),
+        });
+        if (!res.ok) {
+          setToast({ message: "Failed to mark as handled", tone: "error" });
+          return;
+        }
+        setToast({
+          message:
+            ids.length === 1
+              ? "Marked as handled — no mail sent"
+              : `${ids.length} requests marked as handled`,
+          tone: "success",
+        });
+        setExiting((prev) => [...new Set([...prev, ...ids])]);
+        await wait(EXIT_MS);
+        await loadRequests();
+      } catch {
+        setToast({ message: "Network error", tone: "error" });
+      } finally {
+        releaseBusy(ids);
       }
-      setToast(
-        ids.length === 1
-          ? "Marked as handled — no mail sent"
-          : `${ids.length} requests marked as handled`
-      );
-      loadRequests();
-    } catch {
-      setToast("Network error");
-    }
-  };
+    },
+    [loadRequests, releaseBusy]
+  );
 
-  const undoDecision = async (r: LeaveRequest) => {
-    if (
-      r.status !== "handled" &&
-      !window.confirm(
-        "The sent mail can't be recalled — this only moves the request back to Pending. Continue?"
-      )
-    ) {
-      return;
-    }
-    try {
-      const res = await fetch("/api/undo", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: r.id }),
-      });
-      if (!res.ok) {
-        setToast("Failed to undo");
-        return;
+  const undoDecision = useCallback(
+    async (r: LeaveRequest) => {
+      setBusyIds((prev) => [...new Set([...prev, r.id])]);
+      try {
+        const res = await fetch("/api/undo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: r.id }),
+        });
+        if (!res.ok) {
+          setToast({ message: "Failed to undo", tone: "error" });
+          return;
+        }
+        setToast({ message: "Moved back to pending", tone: "success" });
+        setExiting((prev) => [...new Set([...prev, r.id])]);
+        await wait(EXIT_MS);
+        await loadRequests();
+      } catch {
+        setToast({ message: "Network error", tone: "error" });
+      } finally {
+        releaseBusy([r.id]);
       }
-      setToast("↩ Moved back to pending");
-      loadRequests();
-    } catch {
-      setToast("Network error");
-    }
-  };
+    },
+    [loadRequests, releaseBusy]
+  );
 
   const markAllHandled = () => {
     setConfirmClearAll(false);
     markHandled(pending.map((r) => r.id));
   };
 
+  const openDecision = useCallback((r: LeaveRequest, action: Action) => {
+    setModal({
+      request: r,
+      action,
+      to: r.employeeEmail,
+      cc: r.ccRecipients,
+      body: composeDecisionMail({ request: r, action }).body,
+      note: "",
+      sending: false,
+    });
+  }, []);
+
   const confirmDecision = async () => {
     if (!modal) return;
+    const id = modal.request.id;
     setModal({ ...modal, sending: true, error: undefined });
+    setBusyIds((prev) => [...new Set([...prev, id])]);
     try {
       const res = await fetch("/api/decide", {
         method: "POST",
@@ -211,14 +257,21 @@ export default function Home() {
         return;
       }
       setModal(null);
-      setToast(
-        data.alreadyDecided
+      setToast({
+        message: data.alreadyDecided
           ? "Already decided earlier — no duplicate mail sent"
-          : `${modal.action === "approved" ? "Approved" : "Rejected"} — mail sent to ${modal.to}`
-      );
-      loadRequests();
+          : `${modal.action === "approved" ? "Approved" : "Rejected"} — mail sent to ${modal.to}`,
+        tone: "success",
+      });
+      setPulse({ id, action: modal.action });
+      await wait(PULSE_MS);
+      setExiting((prev) => [...new Set([...prev, id])]);
+      await wait(EXIT_MS);
+      await loadRequests();
     } catch {
       setModal({ ...modal, sending: false, error: "Network error" });
+    } finally {
+      releaseBusy([id]);
     }
   };
 
@@ -226,7 +279,10 @@ export default function Home() {
     try {
       const res = await fetch("/api/auth/status", { method: "DELETE" });
       if (!res.ok) {
-        setToast("Could not disconnect the account");
+        setToast({
+          message: "Could not disconnect the account",
+          tone: "error",
+        });
         return;
       }
       setAuth({ connected: false });
@@ -237,9 +293,12 @@ export default function Home() {
       setModal(null);
       setEmailModal(null);
       setShowDirectory(false);
-      setToast("Gmail disconnected — connect another account to continue");
+      setToast({
+        message: "Gmail disconnected — connect another account to continue",
+        tone: "success",
+      });
     } catch {
-      setToast("Network error");
+      setToast({ message: "Network error", tone: "error" });
     }
   };
 
@@ -247,7 +306,7 @@ export default function Home() {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } catch {
-      setToast("Could not reach the server");
+      setToast({ message: "Could not reach the server", tone: "error" });
     }
     window.location.href = "/login";
   };
@@ -255,6 +314,109 @@ export default function Home() {
   const connected = auth?.connected === true;
   const copy = PAGE_COPY[view];
   const showSkeleton = !auth || refreshing || (loading && requests.length === 0);
+  const modalOpen = Boolean(
+    modal || emailModal || showDirectory || confirmClearAll
+  );
+
+  const focusSearch = useCallback(() => {
+    const desktop = document.getElementById(
+      "gl-search"
+    ) as HTMLInputElement | null;
+    if (desktop && desktop.offsetParent !== null) {
+      desktop.focus();
+      desktop.select();
+      return;
+    }
+    setMobileSearch(true);
+    requestAnimationFrame(() => {
+      const mobile = document.getElementById(
+        "gl-search-mobile"
+      ) as HTMLInputElement | null;
+      mobile?.focus();
+      mobile?.select();
+    });
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat || e.isComposing) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      const typing =
+        !!el &&
+        (el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA" ||
+          el.isContentEditable);
+
+      if (e.key === "/" && !typing && !modalOpen) {
+        e.preventDefault();
+        focusSearch();
+        return;
+      }
+      if (typing || modalOpen || !connected) return;
+
+      if (e.key === "Escape") {
+        setSelectedId(null);
+        return;
+      }
+
+      const key = e.key.toLowerCase();
+      const down = e.key === "ArrowDown" || key === "j";
+      const up = e.key === "ArrowUp" || key === "k";
+
+      if (down || up) {
+        if (filtered.length === 0) return;
+        e.preventDefault();
+        keyboardNavRef.current = true;
+        setSelectedId((current) => {
+          const index = filtered.findIndex((r) => r.id === current);
+          if (index === -1) return filtered[down ? 0 : filtered.length - 1].id;
+          const next = Math.min(
+            filtered.length - 1,
+            Math.max(0, index + (down ? 1 : -1))
+          );
+          return filtered[next].id;
+        });
+        return;
+      }
+
+      if (!["a", "r", "h", "e"].includes(key)) return;
+      const row = filtered.find((r) => r.id === selectedId);
+      if (!row || busyIds.includes(row.id)) return;
+
+      if (key === "e") {
+        e.preventDefault();
+        setEmailModal(row);
+        return;
+      }
+      if (row.status !== "pending") return;
+      e.preventDefault();
+      if (key === "a") openDecision(row, "approved");
+      else if (key === "r") openDecision(row, "rejected");
+      else markHandled([row.id]);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    busyIds,
+    connected,
+    filtered,
+    focusSearch,
+    markHandled,
+    modalOpen,
+    openDecision,
+    selectedId,
+  ]);
+
+  useEffect(() => {
+    if (!selectedId || !keyboardNavRef.current) return;
+    keyboardNavRef.current = false;
+    const row = document.getElementById(`gl-row-${selectedId}`);
+    if (!row) return;
+    row.focus({ preventScroll: true });
+    row.scrollIntoView({ block: "nearest" });
+  }, [selectedId]);
 
   return (
     <div className="app-bg flex min-h-screen flex-1 flex-col">
@@ -269,6 +431,8 @@ export default function Home() {
         onSync={() => loadRequests({ skeleton: true })}
         query={query}
         onQuery={setQuery}
+        mobileSearch={mobileSearch}
+        onMobileSearch={setMobileSearch}
         onDisconnect={disconnectGmail}
         onLock={lockApp}
         onHome={() => {
@@ -278,81 +442,73 @@ export default function Home() {
         }}
       />
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-7 sm:px-6 lg:py-9">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-10 sm:px-6 lg:py-14">
         {auth && !connected ? (
           <ConnectHero />
         ) : (
           <>
-            <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+            <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
               <div className="min-w-0">
-                <h1 className="text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
+                <h1 className="text-[34px] font-semibold leading-none tracking-[-0.03em] text-[var(--text-primary)] sm:text-[42px]">
                   {copy.title}
                 </h1>
-                <p className="mt-1 text-sm text-[var(--text-muted)]">
+                <p className="mt-3 text-[13px] text-[var(--text-muted)]">
                   {copy.subtitle}
                 </p>
               </div>
               {view === "dashboard" && pending.length > 0 && (
                 <button
                   onClick={() => setConfirmClearAll(true)}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-2.5 text-xs font-medium text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] md:py-2"
+                  className="press inline-flex shrink-0 items-center gap-2 rounded-md px-2.5 py-2 text-[12px] font-medium text-[var(--text-muted)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
                 >
-                  <IconHistory className="h-3.5 w-3.5" />
-                  Mark all {pending.length} as handled
+                  Mark all
+                  <span className="font-mono">{pending.length}</span>
+                  as handled
                 </button>
               )}
             </div>
 
             <section
               aria-label="Overview"
-              className="grid grid-cols-2 gap-3 lg:grid-cols-4"
+              className="border-y border-[var(--border)] py-5"
             >
-              <StatTile
-                label="Pending"
-                value={stats.pending}
-                tone="amber"
+              <StatStrip
                 loading={showSkeleton}
-                icon={<IconClock />}
-              />
-              <StatTile
-                label="Approved"
-                value={stats.approved}
-                tone="emerald"
-                loading={showSkeleton}
-                icon={<IconCheckCircle />}
-              />
-              <StatTile
-                label="Rejected"
-                value={stats.rejected}
-                tone="rose"
-                loading={showSkeleton}
-                icon={<IconXCircle />}
-              />
-              <StatTile
-                label="Handled"
-                value={stats.handled}
-                tone="indigo"
-                loading={showSkeleton}
-                icon={<IconHistory />}
+                items={[
+                  { label: "Pending", value: stats.pending, tone: "amber" },
+                  { label: "Approved", value: stats.approved, tone: "emerald" },
+                  { label: "Rejected", value: stats.rejected, tone: "rose" },
+                  { label: "Handled", value: stats.handled, tone: "neutral" },
+                ]}
               />
             </section>
 
             {fetchError && (
-              <p className="mt-4 flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-[var(--c-rose)]">
+              <p className="mt-6 flex items-start gap-2 border-l-2 border-[var(--signal-red)] py-1 pl-3 text-[13px] text-[var(--c-rose)]">
                 <IconAlert className="mt-0.5 h-4 w-4 shrink-0" />
                 {fetchError}
               </p>
             )}
 
-            <div className="mt-8 flex items-center justify-between gap-3 border-b border-[var(--border)] pb-3">
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+            <div className="mt-10 flex items-baseline justify-between gap-3">
+              <h2 className="text-[10px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
                 {view === "dashboard" ? "Awaiting decision" : "Decision log"}
               </h2>
-              <span className="text-xs tabular-nums text-[var(--text-muted)]">
-                {query.trim()
-                  ? `${filtered.length} of ${visible.length}`
-                  : `${visible.length} ${visible.length === 1 ? "request" : "requests"}`}
-              </span>
+              <div className="flex items-center gap-4">
+                {view === "dashboard" && (
+                  <span className="hidden items-center gap-2 text-[11px] text-[var(--text-muted)] lg:flex">
+                    <kbd className="kbd">A</kbd>pprove
+                    <kbd className="kbd">R</kbd>eject
+                    <kbd className="kbd">H</kbd>andled
+                    <kbd className="kbd">E</kbd>mail
+                  </span>
+                )}
+                <span className="font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
+                  {query.trim()
+                    ? `${filtered.length}/${visible.length}`
+                    : `${visible.length} ${visible.length === 1 ? "request" : "requests"}`}
+                </span>
+              </div>
             </div>
 
             <section className="mt-5">
@@ -361,51 +517,52 @@ export default function Home() {
               ) : groups.length === 0 ? (
                 query.trim() ? (
                   <EmptyState
-                    icon={<IconSearch className="h-5 w-5" />}
-                    title="No requests match your search"
-                    hint={`Nothing here for “${query.trim()}”.`}
+                    art={<ArtSearch />}
+                    title="Nothing matches that search"
+                    hint={`No name or code contains “${query.trim()}”.`}
                   />
                 ) : view === "dashboard" ? (
                   <InboxZero count={history.length} />
                 ) : (
                   <EmptyState
-                    icon={<IconHistory className="h-5 w-5" />}
+                    art={<ArtTray />}
                     title="No decisions yet"
                     hint="Approvals and rejections will show up here."
                   />
                 )
               ) : (
-                <div className="space-y-6">
+                <div className="space-y-10">
                   {groups.map((group) => (
                     <div key={group.key}>
-                      <div className="sticky-date sticky top-[var(--nav-h)] z-20 flex items-center gap-2.5 py-2">
-                        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+                      <div className="sticky-date sticky top-[var(--nav-h)] z-20 flex items-baseline gap-3 py-3">
+                        <h3 className="text-[26px] font-semibold leading-none tracking-[-0.03em] text-[var(--text-primary)] sm:text-[30px]">
                           {group.label}
                         </h3>
-                        <span className="rounded bg-[var(--surface-raised)] px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-[var(--text-secondary)]">
+                        {group.sub && (
+                          <span className="font-mono text-[12px] uppercase tracking-wide text-[var(--text-muted)]">
+                            {group.sub}
+                          </span>
+                        )}
+                        <span className="ml-auto font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
                           {group.items.length}
                         </span>
-                        <span className="h-px flex-1 bg-[var(--border)]" />
                       </div>
-                      <div className="panel shadow-card divide-y divide-[var(--border)] overflow-hidden rounded-xl">
+                      <div className="divide-y divide-[var(--border)] border-y border-[var(--border)]">
                         {group.items.map((r) => (
                           <RequestRow
                             key={r.id}
                             request={r}
-                            onDecide={(action) =>
-                              setModal({
-                                request: r,
-                                action,
-                                to: r.employeeEmail,
-                                cc: r.ccRecipients,
-                                body: composeDecisionMail({
-                                  request: r,
-                                  action,
-                                }).body,
-                                note: "",
-                                sending: false,
-                              })
+                            exiting={exiting.includes(r.id)}
+                            pulse={
+                              pulse?.id === r.id ? pulse.action : undefined
                             }
+                            selected={selectedId === r.id}
+                            busy={busyIds.includes(r.id)}
+                            onSelect={() => {
+                              keyboardNavRef.current = false;
+                              setSelectedId(r.id);
+                            }}
+                            onDecide={(action) => openDecision(r, action)}
                             onMark={() => markHandled([r.id])}
                             onUndo={() => undoDecision(r)}
                             onViewEmail={() => setEmailModal(r)}
@@ -441,7 +598,10 @@ export default function Home() {
           onClose={() => setShowDirectory(false)}
           onSaved={(count) => {
             setShowDirectory(false);
-            setToast(`Directory updated — ${count} employees saved`);
+            setToast({
+              message: `Directory updated — ${count} employees saved`,
+              tone: "success",
+            });
             loadRequests();
           }}
         />
@@ -466,7 +626,7 @@ export default function Home() {
         />
       )}
 
-      {toast && <Toast message={toast} />}
+      {toast && <Toast message={toast.message} tone={toast.tone} />}
     </div>
   );
 }
