@@ -8,9 +8,17 @@ export interface ModalState {
   request: LeaveRequest;
   action: Action;
   to: string;
+  cc: string[];
+  body: string;
   note: string;
   sending: boolean;
   error?: string;
+}
+
+export const EMAIL_RE = /^[\w.+-]+@[\w-]+(\.[\w-]+)+$/;
+
+export function isEmail(value: string) {
+  return EMAIL_RE.test(value.trim());
 }
 
 export interface DateGroup {
@@ -25,6 +33,8 @@ const LEAVE_TYPE_STYLES: Record<string, string> = {
     "border-violet-500/30 bg-violet-500/10 text-[var(--c-violet)]",
   "sick leave": "border-rose-500/30 bg-rose-500/10 text-[var(--c-rose)]",
   "earned leave": "border-amber-500/30 bg-amber-500/10 text-[var(--c-amber)]",
+  "restricted holiday":
+    "border-teal-500/30 bg-teal-500/10 text-[var(--c-teal)]",
 };
 
 const AVATAR_TONES = [

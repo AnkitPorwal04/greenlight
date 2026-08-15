@@ -36,7 +36,7 @@ export function StatTile({
 }) {
   const t = TONES[tone];
   return (
-    <div className="panel flex items-center gap-3 rounded-xl px-4 py-3.5">
+    <div className="panel shadow-card flex items-center gap-3 rounded-xl px-4 py-3.5">
       <span
         className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${t.icon}`}
       >

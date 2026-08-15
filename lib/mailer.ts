@@ -30,9 +30,12 @@ async function fetchSignature(client: OAuth2Client): Promise<string> {
 
 export async function sendDecisionMail(
   client: OAuth2Client,
-  input: ComposeInput & { to: string; cc: string[] }
+  input: ComposeInput & { to: string; cc: string[]; body?: string }
 ) {
-  const { subject, body } = composeDecisionMail(input);
+  const composed = composeDecisionMail(input);
+  const subject = composed.subject;
+  // Honor a manager-edited body; fall back to the auto-composed text.
+  const body = input.body?.trim() ? input.body : composed.body;
   const gmail = getGmail(client);
   const signature = await fetchSignature(client);
 

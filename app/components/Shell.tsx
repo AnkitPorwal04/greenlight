@@ -29,6 +29,7 @@ interface NavbarProps {
   onQuery: (q: string) => void;
   onDisconnect: () => void;
   onLock: () => void;
+  onHome: () => void;
 }
 
 function Badge({ count, active }: { count: number; active?: boolean }) {
@@ -120,10 +121,12 @@ function SearchField({
 
 function AccountMenu({
   auth,
+  onDirectory,
   onDisconnect,
   onLock,
 }: {
   auth: AuthState | null;
+  onDirectory: () => void;
   onDisconnect: () => void;
   onLock: () => void;
 }) {
@@ -199,6 +202,22 @@ function AccountMenu({
           </div>
 
           <div className="p-1.5">
+            {connected && (
+              <>
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setOpen(false);
+                    onDirectory();
+                  }}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm text-[var(--text-secondary)] transition hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
+                >
+                  <IconUsers className="h-4 w-4 text-[var(--text-muted)]" />
+                  Employee directory
+                </button>
+                <div className="my-1 h-px bg-[var(--border)]" />
+              </>
+            )}
             {connected ? (
               <button
                 role="menuitem"
@@ -252,6 +271,7 @@ export function Navbar({
   onQuery,
   onDisconnect,
   onLock,
+  onHome,
 }: NavbarProps) {
   const [mobileSearch, setMobileSearch] = useState(false);
   const connected = auth?.connected === true;
@@ -260,12 +280,19 @@ export function Navbar({
     <header className="navbar sticky top-0 z-40">
       <div className="mx-auto flex h-[var(--nav-bar-h)] max-w-6xl items-center gap-3 px-4 sm:px-6">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="shrink-0">
-            <Logo size={28} idSuffix="nav" />
-          </span>
-          <span className="truncate text-[15px] font-semibold tracking-tight text-[var(--text-primary)]">
-            Greenlight
-          </span>
+          <button
+            onClick={onHome}
+            aria-label="Greenlight home — refresh"
+            title="Refresh"
+            className="flex min-w-0 items-center gap-2.5 rounded-lg transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-ring)]"
+          >
+            <span className="shrink-0">
+              <Logo size={28} idSuffix="nav" />
+            </span>
+            <span className="truncate text-[15px] font-semibold tracking-tight text-[var(--text-primary)]">
+              Greenlight
+            </span>
+          </button>
           <span className="hidden shrink-0 rounded border border-[var(--border)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)] sm:inline">
             beta
           </span>
@@ -290,12 +317,6 @@ export function Navbar({
             badge={historyCount}
             disabled={!connected}
             onClick={() => onView("history")}
-          />
-          <Tab
-            icon={<IconUsers />}
-            label="Directory"
-            disabled={!connected}
-            onClick={onDirectory}
           />
         </nav>
 
@@ -344,6 +365,7 @@ export function Navbar({
           <ThemeToggleIcon />
           <AccountMenu
             auth={auth}
+            onDirectory={onDirectory}
             onDisconnect={onDisconnect}
             onLock={onLock}
           />
@@ -377,12 +399,6 @@ export function Navbar({
                 disabled={!connected}
                 onClick={() => onView("history")}
               />
-              <Tab
-                icon={<IconUsers />}
-                label="Directory"
-                disabled={!connected}
-                onClick={onDirectory}
-              />
             </>
           )}
         </div>
@@ -395,7 +411,10 @@ export function Footer() {
   return (
     <footer className="footer-bar mt-12">
       <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 py-6 text-xs text-[var(--text-muted)] sm:flex-row sm:px-6">
-        <p className="text-center">Greenlight — Leave Command Center · © 2026</p>
+        <p className="text-center">
+          Greenlight — one-click leave approvals · ©{" "}
+          {new Date().getFullYear()}
+        </p>
         <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
           <a
             href="https://github.com/AnkitPorwal04/greenlight"

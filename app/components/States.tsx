@@ -1,6 +1,13 @@
 import type { ReactNode } from "react";
 import { IconArrowRight, IconCheckCircle, Logo } from "./icons";
 
+export type EmptyTone = "neutral" | "emerald";
+
+const EMPTY_TONES: Record<EmptyTone, string> = {
+  neutral: "bg-[var(--surface-raised)] text-[var(--text-muted)]",
+  emerald: "bg-emerald-500/10 text-[var(--c-emerald)]",
+};
+
 export function ConnectHero() {
   return (
     <div className="rise-in panel mx-auto mt-10 max-w-lg rounded-2xl p-6 text-center sm:p-8">
@@ -30,17 +37,23 @@ export function ConnectHero() {
 }
 
 export function EmptyState({
-  emoji,
+  icon,
+  tone = "neutral",
   title,
   hint,
 }: {
-  emoji: string;
+  icon: ReactNode;
+  tone?: EmptyTone;
   title: string;
   hint?: ReactNode;
 }) {
   return (
-    <div className="panel rise-in flex flex-col items-center rounded-xl px-6 py-14 text-center">
-      <span className="text-3xl">{emoji}</span>
+    <div className="panel shadow-card rise-in flex flex-col items-center rounded-xl px-6 py-14 text-center">
+      <span
+        className={`flex h-11 w-11 items-center justify-center rounded-full ${EMPTY_TONES[tone]}`}
+      >
+        {icon}
+      </span>
       <p className="mt-4 text-sm font-medium text-[var(--text-primary)]">
         {title}
       </p>
@@ -53,7 +66,7 @@ export function EmptyState({
 
 export function InboxZero({ count }: { count: number }) {
   return (
-    <div className="panel rise-in flex flex-col items-center rounded-xl px-6 py-14 text-center">
+    <div className="panel shadow-card rise-in flex flex-col items-center rounded-xl px-6 py-14 text-center">
       <span className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500/10 text-[var(--c-emerald)]">
         <IconCheckCircle className="h-6 w-6" />
       </span>

@@ -23,7 +23,7 @@ export function EmailModal({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
         <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-raised)]">
-          <pre className="max-h-[55dvh] overflow-y-auto whitespace-pre-wrap break-words px-3 py-2.5 font-sans text-xs leading-relaxed text-[var(--text-secondary)]">
+          <pre className="max-h-[55dvh] overflow-y-auto whitespace-pre-wrap break-words px-3 py-2.5 font-sans text-[13px] leading-relaxed text-[var(--text-secondary)]">
             {body || "This email had no plain-text body."}
           </pre>
         </div>

@@ -72,6 +72,17 @@ function extractEmails(headerValue: string): string[] {
   return headerValue.match(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g) ?? [];
 }
 
+// greytHR uses "Reason:" for regular leave and "Remarks:" for restricted
+// holidays. Each label has a different trailing marker, so try both.
+function extractReason(text: string): string {
+  const match =
+    text.match(/Reason\s*:\s*([\s\S]*?)(?=\n\s*Leave Balance\s*:|$)/i) ??
+    text.match(
+      /Remarks\s*:\s*([\s\S]*?)(?=\n\s*(?:Click here|Note)\b|Click here|Note\s*:|$)/i
+    );
+  return (match?.[1] ?? "").replace(/\s+/g, " ").trim();
+}
+
 export function guessEmployeeEmail(name: string, recipients: string[]): string {
   const domain = recipients[0]?.split("@")[1];
   if (!domain || !name) return "";
@@ -90,7 +101,8 @@ export function parseLeaveMail(
 ): ParsedLeaveMail | null {
   const text = extractBodyText(message);
 
-  const applied = text.match(/(.+?)\s*\[([^\]]+)\]\s*has applied for a leave/i);
+  // "has applied for a leave" (regular) or "…a restricted leave" (restricted holiday)
+  const applied = text.match(/(.+?)\s*\[([^\]]+)\]\s*has applied for/i);
   const subject = extractHeader(message, "Subject");
   const subjectMatch = subject.match(/Leave Application from\s+(.+?)\s*\[([^\]]+)\]/i);
 
@@ -107,17 +119,27 @@ export function parseLeaveMail(
     (r) => r !== self && !r.startsWith("no-reply")
   );
 
-  const reasonMatch = text.match(/Reason\s*:\s*([\s\S]*?)(?=\n\s*Leave Balance\s*:|$)/i);
+  // Restricted holidays carry a single "Date:" instead of From/To Date.
+  const fromDate = field(text, "From Date") || field(text, "Date");
+  const toDate = field(text, "To Date") || field(text, "Date");
+
+  // Restricted holidays omit "Number of days"; a dated single-day entry is 1.
+  const explicitDays = parseFloat(field(text, "Number of days"));
+  const numberOfDays = Number.isFinite(explicitDays)
+    ? explicitDays
+    : fromDate
+      ? 1
+      : 0;
 
   return {
     employeeName,
     employeeCode,
     employeeEmail: guessEmployeeEmail(employeeName, ccRecipients),
     leaveType: field(text, "Leave type"),
-    fromDate: field(text, "From Date"),
-    toDate: field(text, "To Date"),
-    numberOfDays: parseFloat(field(text, "Number of days")) || 0,
-    reason: (reasonMatch?.[1] ?? "").replace(/\s+/g, " ").trim(),
+    fromDate,
+    toDate,
+    numberOfDays,
+    reason: extractReason(text),
     leaveBalance: field(text, "Leave Balance"),
     fromSession: field(text, "From Session"),
     toSession: field(text, "To Session"),
