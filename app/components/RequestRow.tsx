@@ -231,14 +231,16 @@ export function RequestRow({
         ) : (
           <div className="flex shrink-0 flex-col items-end gap-2">
             <div className="flex items-center gap-1.5">
-              <button
-                onClick={onUndo}
-                title="Move this request back to Pending"
-                className="inline-flex items-center gap-1 rounded-md border border-[var(--border)] px-1.5 py-1 text-[11px] font-medium text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
-              >
-                <IconUndo className="h-3 w-3" />
-                Undo
-              </button>
+              {r.status === "handled" && (
+                <button
+                  onClick={onUndo}
+                  title="Move this request back to Pending"
+                  className="inline-flex items-center gap-1 rounded-md border border-[var(--border)] px-1.5 py-1 text-[11px] font-medium text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+                >
+                  <IconUndo className="h-3 w-3" />
+                  Undo
+                </button>
+              )}
               <StatusPill request={r} />
             </div>
             {r.decidedAt && (
