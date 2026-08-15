@@ -273,7 +273,7 @@ export function Navbar({
 
   return (
     <header className="navbar sticky top-0 z-40">
-      <div className="mx-auto flex h-[var(--nav-bar-h)] max-w-6xl items-center gap-3 px-4 sm:px-6">
+      <div className="flex h-[var(--nav-bar-h)] items-center gap-3 px-4 sm:px-6 lg:px-10">
         <div className="flex min-w-0 items-center gap-2">
           <button
             onClick={onHome}
@@ -368,7 +368,7 @@ export function Navbar({
       </div>
 
       <div className="border-t border-[var(--border)] md:hidden">
-        <div className="mx-auto flex h-[var(--nav-tabs-h)] max-w-6xl items-center gap-6 overflow-x-auto px-4">
+        <div className="flex h-[var(--nav-tabs-h)] items-center gap-6 overflow-x-auto px-4">
           {mobileSearch && connected ? (
             <SearchField
               query={query}
@@ -404,7 +404,7 @@ export function Navbar({
 export function Footer() {
   return (
     <footer className="footer-bar mt-16">
-      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 py-6 font-mono text-[11px] text-[var(--text-muted)] sm:flex-row sm:px-6">
+      <div className="flex flex-col items-center justify-between gap-3 px-4 py-6 lg:px-10 font-mono text-[11px] text-[var(--text-muted)] sm:flex-row sm:px-6">
         <p className="text-center">
           Greenlight · one-click leave approvals · ©{" "}
           {new Date().getFullYear()}
