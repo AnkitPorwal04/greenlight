@@ -280,33 +280,34 @@ export function RequestRow({
             </button>
           </div>
         ) : (
-          <div className="flex shrink-0 flex-col items-end gap-1.5 pt-0.5">
-            <span
-              title={r.decisionNote}
-              className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${statusTone(
-                r.status
-              )}`}
-            >
-              {statusLabel(r.status)}
-            </span>
+          <div className="flex shrink-0 flex-col items-end gap-2 pt-0.5">
             <div className="flex items-center gap-2">
+              <span
+                title={r.decisionNote}
+                className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${statusTone(
+                  r.status
+                )}`}
+              >
+                {statusLabel(r.status)}
+              </span>
               {r.decidedAt && (
                 <span className="font-mono text-[11px] text-[var(--text-muted)]">
                   {timeAgo(r.decidedAt)}
                 </span>
               )}
-              {r.status === "handled" && (
-                <button
-                  onClick={onUndo}
-                  disabled={busy}
-                  title="Move this request back to Pending"
-                  className="press inline-flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] disabled:opacity-50"
-                >
-                  <IconUndo className="h-3 w-3" />
-                  Undo
-                </button>
-              )}
             </div>
+            {r.status === "handled" && (
+              <button
+                onClick={onUndo}
+                disabled={busy}
+                title="Move this request back to Pending"
+                aria-label="Undo — move this request back to Pending"
+                className="press inline-flex min-h-10 items-center gap-1.5 rounded-md border border-[var(--border-strong)] bg-[var(--surface-raised)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] hover:border-[var(--accent-ring)] hover:bg-[var(--accent-soft)] hover:text-[var(--text-primary)] disabled:opacity-50 sm:min-h-8"
+              >
+                <IconUndo className="h-3.5 w-3.5" />
+                Undo
+              </button>
+            )}
           </div>
         )}
       </div>
