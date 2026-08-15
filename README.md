@@ -1,126 +1,142 @@
 # Greenlight
 
-**One-click leave approvals, straight from your inbox.**
+**Approve leave requests in one click — right from the inbox you already live in.**
 
-Greenlight is a self-hosted dashboard for managers who receive leave-application emails from [greytHR](https://www.greythr.com/) and reply to each one by hand. It scans your Gmail for leave requests, presents them in a clean date-grouped feed, and sends a professional approval or rejection reply — threaded into the original conversation, with the right people in CC — in a single click.
+If you manage a team that runs on [greytHR](https://www.greythr.com/), you know the routine: someone applies for leave, greytHR emails you, and you write back "Approved — enjoy!" by hand. Again. And again.
 
-Built with Next.js 16, TypeScript, Tailwind CSS 4, the Gmail API, and Upstash Redis. Deploys to Vercel in minutes.
+Greenlight takes that little chore off your plate. It quietly reads those greytHR emails from your Gmail, lays them out as a tidy to-do list, and — the moment you hit **Approve** or **Reject** — writes and sends the reply for you: in the right thread, with the right people copied, signed with your signature. You stay in control (nothing goes out until you click), but the busywork disappears.
 
----
-
-## How it works
-
-1. greytHR emails you when someone applies for leave
-2. Greenlight matches those mails (`from:no-reply@greythr.com`), parses out the employee, leave type, dates, and reason, and shows them as **Pending**
-3. You click **Approve** or **Reject** → a reply is sent from your own Gmail to the employee (resolved via your employee directory), CC'ing the managers from the original mail, with your Gmail signature appended
-4. Every decision is recorded against the mail's permanent ID — handled requests never resurface
-
-Requests you answered outside Greenlight are detected automatically (reply in the same thread, or any sent mail to that employee after the request) and filed as **Handled**.
-
-### Multi-user
-
-Each manager who opens the app connects their own Gmail and gets a fully isolated workspace — own requests, own decisions, own sent mail. The employee directory is shared. Access is gated by a common passcode; identity is bound to the connected Google account via a signed HTTP-only cookie.
+Built with Next.js 16, TypeScript, Tailwind CSS 4, the Gmail API, and Upstash Redis. It's yours to self-host, and it's live on Vercel in a few minutes.
 
 ---
 
-## Getting started
+## What it actually does
 
-### Prerequisites
+1. Someone on your team applies for leave, and greytHR sends you the usual email.
+2. Greenlight spots it (`from:no-reply@greythr.com`), reads out the who / what / when / why, and drops it into your **Pending** list. Both ordinary leave and **Restricted Holiday** applications are understood.
+3. You glance at it and click **Approve** or **Reject**. Before it sends, you can tweak the CC list or reword the message — or just send the sensible default. The reply goes from your own Gmail, threaded into the original conversation, CC'ing the managers who were already on it.
+4. The decision is remembered against the email's permanent ID, so a handled request never nags you again — and it will **never send twice**, even if you double-click or your connection hiccups.
+
+Dealt with something outside the app? Greenlight notices. If you already replied in the thread, or emailed that person after their request, it quietly files it under **Handled**.
+
+### Everyone gets their own desk
+
+Open the app, connect your Gmail, and you get a workspace that's entirely yours — your requests, your decisions, your sent mail. The employee directory is the one thing everyone shares. A common passcode guards the door, and your identity is tied to your Google account with a signed, HTTP-only cookie, so nobody can wear your badge.
+
+---
+
+## Get it running
+
+### You'll need
 
 - Node.js 20+
-- A Google account that receives greytHR leave mails
-- (Production) A [Vercel](https://vercel.com) account and an [Upstash Redis](https://upstash.com) database (free tiers suffice)
+- A Google account that receives greytHR leave mail
+- For production: a free [Vercel](https://vercel.com) account and a free [Upstash Redis](https://upstash.com) database
 
-### 1. Google Cloud setup (one-time, ~10 minutes)
+### 1. Set up Google (one-time, ~10 minutes)
+
+The one slightly fiddly part — and you only do it once:
 
 1. Create a project at [console.cloud.google.com](https://console.cloud.google.com)
-2. **APIs & Services → Library** → enable **Gmail API**
-3. **Google Auth Platform** → configure the consent screen
-   - Audience **Internal** if your organisation uses Google Workspace (recommended: no verification, no warning screens)
-   - Otherwise **External**, then **Audience → Publish app** — do *not* stay in Testing status, or refresh tokens expire every 7 days
-4. **Data Access** → add scopes `gmail.readonly` and `gmail.send`
-5. **Clients → Create client** → *Web application* → add redirect URIs (exact, no trailing slash):
+2. **APIs & Services → Library** → turn on the **Gmail API**
+3. **Google Auth Platform** → set up the consent screen
+   - Choose **Internal** if your org is on Google Workspace (simplest — no review, no scary warning screens)
+   - Otherwise choose **External**, then **Publish** the app — don't leave it in Testing, or your login expires every 7 days
+4. **Data Access** → add the scopes `gmail.readonly` and `gmail.send`
+5. **Clients → Create client → Web application** → add these redirect URIs exactly (no trailing slash):
    - `http://localhost:3000/api/auth/callback`
    - `https://<your-deployment>.vercel.app/api/auth/callback`
-6. Note the Client ID and Client Secret (the secret is shown only once)
+6. Copy the Client ID and Client Secret — the secret is shown only once, so grab it now
 
-### 2. Run locally
+### 2. Run it on your machine
 
 ```bash
-git clone https://github.com/AnkitPorwal04/greenlight.git
+git clone https://github.com/ArchanaShaji1311/greenlight.git
 cd greenlight
-cp .env.example .env.local    # fill in the values below
 npm install
-npm run dev                   # http://localhost:3000
+npm run dev            # → http://localhost:3000
 ```
 
-### 3. Deploy to Vercel
+Create a `.env.local` in the project root with (at least) your Google credentials — the full list is under [Settings](#settings):
 
-1. Import the repository in the Vercel dashboard (framework auto-detects)
-2. Add the environment variables (table below)
-3. Add **Upstash for Redis** from the Vercel Marketplace and connect it to the project — or create a database at [console.upstash.com](https://console.upstash.com) and set the two `UPSTASH_*` variables manually
-4. Deploy, then add the production callback URL to your Google OAuth client (step 1.5)
+```bash
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-client-secret
+```
 
-### 4. Load your employee directory
+Open the app, click **Connect Gmail**, and your requests roll in.
 
-The repository ships **without** employee data. In the app, open **Directory** and paste your HR export as CSV, TSV, or JSON — columns `code`, `name`, `email` (a header row is detected automatically):
+### 3. Put it on Vercel
+
+1. Import the repo in Vercel (it auto-detects Next.js)
+2. Add the environment variables from the table below
+3. Add **Upstash for Redis** from the Vercel Marketplace and connect it — or spin one up at [console.upstash.com](https://console.upstash.com) and set the two `UPSTASH_*` values yourself
+4. Deploy, then add your production callback URL back in the Google console (step 1.5)
+
+### 4. Teach it your team
+
+Greenlight ships with **no** employee data. Open **Directory** (it's in the profile menu, top-right) and paste your HR export — CSV, TSV, or JSON with `code`, `name`, `email` columns. A header row is detected for you:
 
 ```
 Employee Code	Employee Name	Email
 GRP1234	Jane Doe	jane.doe@example.com
 ```
 
-Requests are matched to directory entries by employee code, so decision mails always go to the verified address. Entries are stored in Redis; update them anytime without redeploying.
+Requests match to the directory by employee code, so every reply lands at the *verified* address — not a guess. Entries live in Redis; edit them anytime, no redeploy needed.
 
 ---
 
-## Configuration
+## Settings
 
-| Variable | Required | Description |
+| Variable | Needed? | What it's for |
 | --- | --- | --- |
-| `GOOGLE_CLIENT_ID` | Yes | OAuth 2.0 client ID |
-| `GOOGLE_CLIENT_SECRET` | Yes | OAuth 2.0 client secret |
-| `APP_PASSCODE` | Production | Shared passcode gating the app; also signs identity cookies |
-| `UPSTASH_REDIS_REST_URL` | Production | Injected by the Vercel + Upstash integration (`KV_REST_API_URL` also accepted) |
-| `UPSTASH_REDIS_REST_TOKEN` | Production | As above (`KV_REST_API_TOKEN` also accepted) |
+| `GOOGLE_CLIENT_ID` | Yes | Your OAuth 2.0 client ID |
+| `GOOGLE_CLIENT_SECRET` | Yes | Your OAuth 2.0 client secret |
+| `APP_PASSCODE` | Production | The shared passcode that gates the app (it also signs identity cookies) |
+| `UPSTASH_REDIS_REST_URL` | Production | Set by the Vercel + Upstash integration (`KV_REST_API_URL` works too) |
+| `UPSTASH_REDIS_REST_TOKEN` | Production | Same idea (`KV_REST_API_TOKEN` works too) |
 | `GOOGLE_REDIRECT_URI` | No | Override; defaults to `<request-origin>/api/auth/callback` |
-| `LEAVE_MAIL_QUERY` | No | Custom Gmail search query, for HR systems other than greytHR |
+| `LEAVE_MAIL_QUERY` | No | A custom Gmail search, if your HR tool isn't greytHR |
 
-Without Redis configured, data falls back to local `.data/` files (development only — serverless filesystems are ephemeral).
+No Redis configured? Data falls back to local `.data/` files — fine for tinkering, but not for production (serverless disks don't stick around).
 
 ---
 
-## Architecture
+## Under the hood
 
 ```
 app/
-  page.tsx                Dashboard: date-grouped feed, search, stats
-  login/                  Passcode gate
-  components/             Navbar/footer shell, request rows, modals, theming
+  page.tsx        The dashboard — date-grouped feed, search, stats
+  login/          The passcode gate
+  components/     Shell, request rows, modals (keyboard-friendly Modal + confirm), theming
   api/
-    auth/                 Google OAuth, passcode session, logout
-    leaves/               Fetch + parse greytHR threads, auto-detection
-    decide/               Compose and send the decision reply (threaded)
-    mark/                 Record externally-handled requests
-    employees/            Directory read/update
+    auth/         Google OAuth, passcode session, logout
+    leaves/       Fetch + parse greytHR threads, auto-detect the ones you handled
+    decide/       Compose and send the reply — atomic, with no duplicate sends
+    mark/         Record things you handled elsewhere
+    employees/    Read/update the directory
 lib/
-  parser.ts               greytHR mail → structured leave request
-  compose.ts              Mail templates (shared server/client for live preview)
-  mailer.ts               RFC 2047 headers, threading, signature, Gmail send
-  session.ts              HMAC-signed per-user identity cookie
-  storage.ts              Upstash Redis adapter with file fallback
-  employees.ts            Shared directory (bundled baseline + Redis overrides)
-proxy.ts                  Passcode enforcement on every route
+  parser.ts       greytHR mail → structured request (regular leave + Restricted Holiday)
+  compose.ts      The reply template (shared client/server, so the preview matches)
+  mailer.ts       RFC 2047 headers, threading, signature, the actual Gmail send
+  session.ts      HMAC-signed per-user identity cookie
+  storage.ts      Upstash Redis, with a local-file fallback
+  employees.ts    The shared directory
+proxy.ts          Passcode check on every route
 ```
 
-**Security model:** all pages and APIs sit behind the passcode (`proxy.ts`); each user's OAuth tokens are stored server-side keyed by their Google account and never reach the browser; the identity cookie is HMAC-signed to prevent impersonation; employee data lives in your Redis instance, not in this repository.
+**On security:** everything sits behind the passcode (`proxy.ts`). Your OAuth tokens are kept server-side, keyed to your Google account, and never touch the browser. The identity cookie is HMAC-signed so it can't be forged. And your employee data lives in your Redis — never in this repo.
 
 ---
 
-## Privacy
+## Your data stays yours
 
-This repository contains no personal data. Your employee directory, OAuth tokens, and decision history exist only in your own Redis database and Gmail account.
+There's no personal data in this repository. Your directory, your tokens, and your decision history live only in your own Redis and your own Gmail. That's the whole point.
 
 ## License
 
 [MIT](LICENSE)
+
+---
+
+*Made to give managers their afternoons back.* 🌱

@@ -4,7 +4,9 @@ import {
   IconAlert,
   IconCalendar,
   IconCheck,
+  IconCheckCircle,
   IconChevron,
+  IconHistory,
   IconMail,
   IconX,
 } from "./icons";
@@ -27,19 +29,21 @@ function StatusPill({ request }: { request: LeaveRequest }) {
     handled:
       "border-[var(--border)] bg-[var(--surface-raised)] text-[var(--text-secondary)]",
   };
-  const label: Record<string, string> = {
-    approved: "✓ Approved",
-    rejected: "✕ Rejected",
-    handled: "✔ Handled",
+  const content: Record<string, { icon: React.ReactNode; label: string }> = {
+    approved: { icon: <IconCheck className="h-3 w-3" />, label: "Approved" },
+    rejected: { icon: <IconX className="h-3 w-3" />, label: "Rejected" },
+    handled: { icon: <IconHistory className="h-3 w-3" />, label: "Handled" },
   };
+  const c = content[request.status] ?? content.handled;
   return (
     <span
       title={request.decisionNote}
-      className={`inline-flex shrink-0 items-center rounded-md border px-2 py-1 text-[11px] font-semibold ${
+      className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold ${
         map[request.status] ?? map.handled
       }`}
     >
-      {label[request.status] ?? label.handled}
+      {c.icon}
+      {c.label}
     </span>
   );
 }
@@ -76,12 +80,9 @@ export function RequestRow({
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <h3 className="min-w-0 max-w-full truncate text-sm font-semibold text-[var(--text-primary)]">
+            <h3 className="min-w-0 max-w-full truncate text-[15px] font-semibold text-[var(--text-primary)]">
               {r.employeeName}
             </h3>
-            <span className="min-w-0 max-w-full truncate font-mono text-[11px] text-[var(--text-muted)]">
-              {r.employeeCode}
-            </span>
             <span
               className={`min-w-0 max-w-full truncate rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${leaveTypeStyle(
                 r.leaveType
@@ -101,6 +102,10 @@ export function RequestRow({
           </div>
 
           <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+            <span className="font-mono text-[var(--text-muted)]">
+              {r.employeeCode}
+            </span>
+            <Meta>·</Meta>
             <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-[var(--text-secondary)]">
               <IconCalendar className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]" />
               <span className="truncate">{dateRange(r)}</span>
@@ -117,7 +122,7 @@ export function RequestRow({
             className="group mt-1 flex w-full items-start gap-1.5 py-2.5 text-left md:mt-2 md:py-1"
           >
             <span
-              className={`min-w-0 break-words text-xs leading-relaxed text-[var(--text-secondary)] transition group-hover:text-[var(--text-primary)] ${
+              className={`min-w-0 break-words text-[13px] leading-relaxed text-[var(--text-secondary)] transition group-hover:text-[var(--text-primary)] ${
                 open ? "" : "line-clamp-1"
               }`}
             >
@@ -131,7 +136,7 @@ export function RequestRow({
           </button>
 
           {open && (
-            <dl className="rise-in mt-3 grid gap-x-6 gap-y-2 rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] p-3 text-[11px] sm:grid-cols-2">
+            <dl className="rise-in mt-3 grid gap-x-6 gap-y-2 rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] p-3 text-xs sm:grid-cols-2">
               <div>
                 <dt className="text-[var(--text-muted)]">Leave balance</dt>
                 <dd className="mt-0.5 text-[var(--text-primary)]">
@@ -152,13 +157,18 @@ export function RequestRow({
                     {r.employeeEmail || "—"}
                   </span>
                   <span
-                    className={`shrink-0 ${
+                    className={`inline-flex shrink-0 items-center gap-1 ${
                       r.emailVerified
                         ? "text-[var(--c-emerald)]"
                         : "text-[var(--c-amber)]"
                     }`}
                   >
-                    {r.emailVerified ? "✓ Verified" : "⚠ Guessed"}
+                    {r.emailVerified ? (
+                      <IconCheckCircle className="h-3.5 w-3.5" />
+                    ) : (
+                      <IconAlert className="h-3.5 w-3.5" />
+                    )}
+                    {r.emailVerified ? "Verified" : "Guessed"}
                   </span>
                 </dd>
               </div>
@@ -210,7 +220,7 @@ export function RequestRow({
             <button
               onClick={onMark}
               title="Record as done without sending any mail"
-              className="inline-flex rounded-lg px-2.5 py-1.5 text-xs font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
+              className="inline-flex items-center rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
             >
               Handled
             </button>

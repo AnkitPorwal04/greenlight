@@ -28,3 +28,13 @@ export async function saveDecision(
   all[messageId] = decision;
   await setJSON(decisionsKey(email), all);
 }
+
+// Used to roll back an optimistically-saved decision when the mail send fails,
+// so the manager can safely retry without a duplicate being left behind.
+export async function deleteDecision(email: string, messageId: string) {
+  const all = await loadDecisions(email);
+  if (messageId in all) {
+    delete all[messageId];
+    await setJSON(decisionsKey(email), all);
+  }
+}

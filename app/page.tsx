@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ConfirmModal } from "./components/ConfirmModal";
 import { DecisionModal } from "./components/DecisionModal";
 import { DirectoryModal } from "./components/DirectoryModal";
 import { EmailModal } from "./components/EmailModal";
@@ -18,7 +19,8 @@ import {
   IconAlert,
   IconCheckCircle,
   IconClock,
-  IconInbox,
+  IconHistory,
+  IconSearch,
   IconXCircle,
 } from "./components/icons";
 import {
@@ -28,6 +30,7 @@ import {
   type ModalState,
   type View,
 } from "./components/utils";
+import { composeDecisionMail } from "@/lib/compose";
 import type { LeaveRequest } from "@/lib/types";
 
 const PAGE_COPY: Record<View, { title: string; subtitle: string }> = {
@@ -45,17 +48,24 @@ export default function Home() {
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState | null>(null);
   const [emailModal, setEmailModal] = useState<LeaveRequest | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [view, setView] = useState<View>("dashboard");
   const [showDirectory, setShowDirectory] = useState(false);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
   const [query, setQuery] = useState("");
 
-  const loadRequests = useCallback(async () => {
+  const loadRequests = useCallback(async (opts?: { skeleton?: boolean }) => {
     setLoading(true);
+    if (opts?.skeleton) setRefreshing(true);
     setFetchError(null);
+    // Keep the skeleton up long enough to register on a fast (e.g. cached) load.
+    const minVisible = opts?.skeleton
+      ? new Promise((resolve) => setTimeout(resolve, 450))
+      : null;
     try {
       const res = await fetch("/api/leaves");
       const data = await res.json();
@@ -68,7 +78,9 @@ export default function Home() {
     } catch {
       setFetchError("Could not reach the server");
     } finally {
+      if (minVisible) await minVisible;
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -108,7 +120,7 @@ export default function Home() {
       pending: pending.length,
       approved: requests.filter((r) => r.status === "approved").length,
       rejected: requests.filter((r) => r.status === "rejected").length,
-      total: requests.length,
+      handled: requests.filter((r) => r.status === "handled").length,
     }),
     [requests, pending]
   );
@@ -143,13 +155,8 @@ export default function Home() {
   };
 
   const markAllHandled = () => {
-    if (
-      window.confirm(
-        `Mark all ${pending.length} pending requests as handled? No mails will be sent — use this to clear requests you already dealt with outside Greenlight.`
-      )
-    ) {
-      markHandled(pending.map((r) => r.id));
-    }
+    setConfirmClearAll(false);
+    markHandled(pending.map((r) => r.id));
   };
 
   const confirmDecision = async () => {
@@ -163,7 +170,8 @@ export default function Home() {
           request: modal.request,
           action: modal.action,
           to: modal.to,
-          cc: modal.request.ccRecipients,
+          cc: modal.cc,
+          body: modal.body,
           note: modal.note || undefined,
         }),
       });
@@ -178,7 +186,9 @@ export default function Home() {
       }
       setModal(null);
       setToast(
-        `${modal.action === "approved" ? "Approved" : "Rejected"} — mail sent to ${modal.to}`
+        data.alreadyDecided
+          ? "Already decided earlier — no duplicate mail sent"
+          : `${modal.action === "approved" ? "Approved" : "Rejected"} — mail sent to ${modal.to}`
       );
       loadRequests();
     } catch {
@@ -218,7 +228,7 @@ export default function Home() {
 
   const connected = auth?.connected === true;
   const copy = PAGE_COPY[view];
-  const showSkeleton = !auth || (loading && requests.length === 0);
+  const showSkeleton = !auth || refreshing || (loading && requests.length === 0);
 
   return (
     <div className="app-bg flex min-h-screen flex-1 flex-col">
@@ -230,11 +240,16 @@ export default function Home() {
         historyCount={history.length}
         auth={auth}
         loading={loading}
-        onSync={loadRequests}
+        onSync={() => loadRequests({ skeleton: true })}
         query={query}
         onQuery={setQuery}
         onDisconnect={disconnectGmail}
         onLock={lockApp}
+        onHome={() => {
+          setView("dashboard");
+          setQuery("");
+          if (connected) loadRequests({ skeleton: true });
+        }}
       />
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-7 sm:px-6 lg:py-9">
@@ -253,9 +268,10 @@ export default function Home() {
               </div>
               {view === "dashboard" && pending.length > 0 && (
                 <button
-                  onClick={markAllHandled}
-                  className="shrink-0 rounded-lg border border-[var(--border)] px-3 py-2.5 text-xs font-medium text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] md:py-2"
+                  onClick={() => setConfirmClearAll(true)}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-2.5 text-xs font-medium text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] md:py-2"
                 >
+                  <IconHistory className="h-3.5 w-3.5" />
                   Mark all {pending.length} as handled
                 </button>
               )}
@@ -287,11 +303,11 @@ export default function Home() {
                 icon={<IconXCircle />}
               />
               <StatTile
-                label="Total"
-                value={stats.total}
+                label="Handled"
+                value={stats.handled}
                 tone="indigo"
                 loading={showSkeleton}
-                icon={<IconInbox />}
+                icon={<IconHistory />}
               />
             </section>
 
@@ -319,7 +335,7 @@ export default function Home() {
               ) : groups.length === 0 ? (
                 query.trim() ? (
                   <EmptyState
-                    emoji="🔍"
+                    icon={<IconSearch className="h-5 w-5" />}
                     title="No requests match your search"
                     hint={`Nothing here for “${query.trim()}”.`}
                   />
@@ -327,7 +343,7 @@ export default function Home() {
                   <InboxZero count={history.length} />
                 ) : (
                   <EmptyState
-                    emoji="🗂️"
+                    icon={<IconHistory className="h-5 w-5" />}
                     title="No decisions yet"
                     hint="Approvals and rejections will show up here."
                   />
@@ -345,7 +361,7 @@ export default function Home() {
                         </span>
                         <span className="h-px flex-1 bg-[var(--border)]" />
                       </div>
-                      <div className="panel divide-y divide-[var(--border)] overflow-hidden rounded-xl">
+                      <div className="panel shadow-card divide-y divide-[var(--border)] overflow-hidden rounded-xl">
                         {group.items.map((r) => (
                           <RequestRow
                             key={r.id}
@@ -355,6 +371,11 @@ export default function Home() {
                                 request: r,
                                 action,
                                 to: r.employeeEmail,
+                                cc: r.ccRecipients,
+                                body: composeDecisionMail({
+                                  request: r,
+                                  action,
+                                }).body,
                                 note: "",
                                 sending: false,
                               })
@@ -396,6 +417,25 @@ export default function Home() {
             setToast(`Directory updated — ${count} employees saved`);
             loadRequests();
           }}
+        />
+      )}
+
+      {confirmClearAll && (
+        <ConfirmModal
+          title={`Mark all ${pending.length} pending as handled?`}
+          message={
+            <>
+              This files every pending request under{" "}
+              <span className="font-medium text-[var(--text-primary)]">
+                Handled
+              </span>{" "}
+              without sending any email. Use it only for requests you already
+              dealt with outside Greenlight.
+            </>
+          }
+          confirmLabel={`Mark ${pending.length} as handled`}
+          onConfirm={markAllHandled}
+          onClose={() => setConfirmClearAll(false)}
         />
       )}
 
