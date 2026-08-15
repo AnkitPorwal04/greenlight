@@ -313,13 +313,13 @@ export function Navbar({
           />
         </nav>
 
-        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        <div className="ml-auto flex shrink-0 items-center gap-2.5">
           {connected && (
             <SearchField
               query={query}
               onQuery={onQuery}
               inputId="gl-search"
-              className="hidden w-60 md:block lg:w-72"
+              className="hidden w-64 transition-all duration-200 focus-within:w-80 md:block lg:w-80 lg:focus-within:w-96 xl:w-96 xl:focus-within:w-[28rem]"
             />
           )}
           {connected && (
