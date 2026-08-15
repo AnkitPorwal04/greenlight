@@ -62,7 +62,8 @@ export function ThemeToggleIcon() {
     <button
       onClick={toggle}
       aria-label="Toggle colour theme"
-      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] md:h-9 md:w-9"
+      data-tip="Switch the vibe 🌗"
+      className="tip flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] md:h-9 md:w-9"
     >
       <span className="theme-when-dark flex">
         <IconSun className="h-4 w-4" />

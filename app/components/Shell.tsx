@@ -162,8 +162,8 @@ function AccountMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Account menu"
-        title={connected ? email : "Not connected"}
-        className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border text-sm font-semibold transition md:h-9 md:w-9 ${
+        data-tip="That's you!"
+        className={`tip tip-end relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border text-sm font-semibold transition md:h-9 md:w-9 ${
           open
             ? "border-[var(--accent-ring)] bg-[var(--accent-soft)] text-[var(--accent)]"
             : "border-[var(--border)] bg-[var(--surface-raised)] text-[var(--text-secondary)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
@@ -333,7 +333,8 @@ export function Navbar({
               onClick={() => setMobileSearch(!mobileSearch)}
               aria-label={mobileSearch ? "Close search" : "Search"}
               aria-expanded={mobileSearch}
-              className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] md:hidden"
+              data-tip="Find someone 🔍"
+              className="tip flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] md:hidden"
             >
               {mobileSearch ? (
                 <IconX className="h-4 w-4" />
@@ -347,8 +348,8 @@ export function Navbar({
               onClick={onSync}
               disabled={loading}
               aria-label="Sync inbox"
-              title="Sync inbox"
-              className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] disabled:opacity-50 md:h-9 md:w-9"
+              data-tip="Fetch fresh mails ✨"
+              className="tip flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text-secondary)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] disabled:opacity-50 md:h-9 md:w-9"
             >
               <IconRefresh
                 className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
