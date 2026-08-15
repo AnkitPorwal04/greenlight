@@ -432,6 +432,24 @@ export function IconGithub({ className }: IconProps) {
   );
 }
 
+export function IconUndo({ className }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={base(className)}
+      aria-hidden="true"
+    >
+      <path d="M4 9.5h10.5a5 5 0 010 10H9" />
+      <path d="M7.5 5.5L3.5 9.5l4 4" />
+    </svg>
+  );
+}
+
 export function IconArrowRight({ className }: IconProps) {
   return (
     <svg

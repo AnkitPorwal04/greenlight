@@ -8,6 +8,7 @@ import {
   IconChevron,
   IconHistory,
   IconMail,
+  IconUndo,
   IconX,
 } from "./icons";
 import {
@@ -56,11 +57,13 @@ export function RequestRow({
   request: r,
   onDecide,
   onMark,
+  onUndo,
   onViewEmail,
 }: {
   request: LeaveRequest;
   onDecide: (action: Action) => void;
   onMark: () => void;
+  onUndo: () => void;
   onViewEmail: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -227,7 +230,17 @@ export function RequestRow({
           </div>
         ) : (
           <div className="flex shrink-0 flex-col items-end gap-2">
-            <StatusPill request={r} />
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={onUndo}
+                title="Move this request back to Pending"
+                className="inline-flex items-center gap-1 rounded-md border border-[var(--border)] px-1.5 py-1 text-[11px] font-medium text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+              >
+                <IconUndo className="h-3 w-3" />
+                Undo
+              </button>
+              <StatusPill request={r} />
+            </div>
             {r.decidedAt && (
               <span className="text-[11px] text-[var(--text-muted)]">
                 {timeAgo(r.decidedAt)}

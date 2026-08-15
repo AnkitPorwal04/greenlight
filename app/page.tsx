@@ -154,6 +154,32 @@ export default function Home() {
     }
   };
 
+  const undoDecision = async (r: LeaveRequest) => {
+    if (
+      r.status !== "handled" &&
+      !window.confirm(
+        "The sent mail can't be recalled — this only moves the request back to Pending. Continue?"
+      )
+    ) {
+      return;
+    }
+    try {
+      const res = await fetch("/api/undo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: r.id }),
+      });
+      if (!res.ok) {
+        setToast("Failed to undo");
+        return;
+      }
+      setToast("↩ Moved back to pending");
+      loadRequests();
+    } catch {
+      setToast("Network error");
+    }
+  };
+
   const markAllHandled = () => {
     setConfirmClearAll(false);
     markHandled(pending.map((r) => r.id));
@@ -381,6 +407,7 @@ export default function Home() {
                               })
                             }
                             onMark={() => markHandled([r.id])}
+                            onUndo={() => undoDecision(r)}
                             onViewEmail={() => setEmailModal(r)}
                           />
                         ))}

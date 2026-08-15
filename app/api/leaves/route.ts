@@ -3,7 +3,7 @@ import type { gmail_v1 } from "@googleapis/gmail";
 import { getAuthorizedClient, getGmail } from "@/lib/google";
 import { getUserFromRequest } from "@/lib/session";
 import { parseLeaveMail, extractBodyText } from "@/lib/parser";
-import { loadDecisions, saveDecision } from "@/lib/store";
+import { loadDecisions, loadNoAuto, saveDecision } from "@/lib/store";
 import { loadEmployees } from "@/lib/employees";
 import type { LeaveRequest } from "@/lib/types";
 
@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const gmail = getGmail(client);
-    const [profile, list, decisions, employees] = await Promise.all([
+    const [profile, list, decisions, employees, undone] = await Promise.all([
       gmail.users.getProfile({ userId: "me" }),
       gmail.users.messages.list({
         userId: "me",
@@ -53,7 +53,9 @@ export async function GET(req: NextRequest) {
       }),
       loadDecisions(user),
       loadEmployees(),
+      loadNoAuto(user),
     ]);
+    const noAuto = new Set(undone);
     const selfEmail = profile.data.emailAddress ?? "";
     const ids = list.data.messages ?? [];
 
@@ -80,7 +82,9 @@ export async function GET(req: NextRequest) {
       const directoryEntry = employees[parsed.employeeCode.toUpperCase()];
       let decision = decisions[msg.id!];
 
-      if (!decision && threadHasMyReply(thread, msg.id!, selfEmail)) {
+      const autoAllowed = !noAuto.has(msg.id!);
+
+      if (!decision && autoAllowed && threadHasMyReply(thread, msg.id!, selfEmail)) {
         decision = {
           status: "handled",
           decidedAt: new Date().toISOString(),
@@ -94,7 +98,7 @@ export async function GET(req: NextRequest) {
         : Date.now();
       const employeeEmail = directoryEntry?.email ?? parsed.employeeEmail;
 
-      if (!decision && employeeEmail) {
+      if (!decision && autoAllowed && employeeEmail) {
         const sent = await gmail.users.messages.list({
           userId: "me",
           q: `in:sent to:${employeeEmail} after:${Math.floor(receivedMs / 1000)}`,
