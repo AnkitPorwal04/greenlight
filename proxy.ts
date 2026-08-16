@@ -14,7 +14,19 @@ async function sha256Hex(input: string): Promise<string> {
 
 export async function proxy(req: NextRequest) {
   const passcode = process.env.APP_PASSCODE;
-  if (!passcode) return NextResponse.next();
+  if (!passcode) {
+    // Fail closed: never serve an unprotected app in production. A missing
+    // passcode there is a misconfiguration, and running open would expose
+    // every connected mailbox, so refuse to serve instead. Local development
+    // stays open so you can work without setting a passcode.
+    if (process.env.NODE_ENV === "production") {
+      return new NextResponse(
+        "Greenlight is not configured: APP_PASSCODE is missing. Refusing to run without it.",
+        { status: 503 }
+      );
+    }
+    return NextResponse.next();
+  }
 
   const { pathname } = req.nextUrl;
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
