@@ -226,6 +226,7 @@ export default function Home() {
       body: composeDecisionMail({ request: r, action }).body,
       note: "",
       sending: false,
+      confirmed: false,
     });
   }, []);
 
@@ -245,6 +246,7 @@ export default function Home() {
           cc: modal.cc,
           body: modal.body,
           note: modal.note || undefined,
+          confirmed: modal.confirmed,
         }),
       });
       const data = await res.json();

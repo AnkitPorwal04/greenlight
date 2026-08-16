@@ -20,6 +20,15 @@ export function DecisionModal({
   const defaultBody = composeDecisionMail({ request: r, action }).body;
   const edited = modal.body !== defaultBody;
 
+  // Trusted only when the address is the one verified from the directory and
+  // hasn't been changed. Anything else (a guessed address, or a hand-typed one)
+  // needs the manager to explicitly confirm before it can be sent.
+  const trusted =
+    r.emailVerified &&
+    modal.to.trim().toLowerCase() ===
+      (r.employeeEmail || "").trim().toLowerCase();
+  const blocked = !trusted && !modal.confirmed;
+
   return (
     <Modal onClose={onClose} dismissible={!edited}>
       <ModalHeader
@@ -33,31 +42,52 @@ export function DecisionModal({
       />
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
-        <label className="block">
+        <div>
           <FieldLabel>Send to</FieldLabel>
           <input
             value={modal.to}
-            onChange={(e) => onChange({ ...modal, to: e.target.value })}
+            onChange={(e) =>
+              onChange({ ...modal, to: e.target.value, confirmed: false })
+            }
             placeholder="employee@company.com"
+            aria-label="Reply address"
             className="field w-full rounded-md px-3 py-2.5 font-mono text-[13px] transition"
           />
           <span
             className={`mt-1.5 flex items-start gap-1.5 text-[11px] ${
-              r.emailVerified
-                ? "text-[var(--c-emerald)]"
-                : "text-[var(--c-amber)]"
+              trusted ? "text-[var(--c-emerald)]" : "text-[var(--c-amber)]"
             }`}
           >
-            {r.emailVerified ? (
+            {trusted ? (
               <IconCheckCircle className="mt-px h-3.5 w-3.5 shrink-0" />
             ) : (
               <IconAlert className="mt-px h-3.5 w-3.5 shrink-0" />
             )}
-            {r.emailVerified
+            {trusted
               ? "Verified from employee directory"
-              : "Guessed from name — double-check before sending"}
+              : "Not verified — this address was guessed or edited. Confirm it below before sending."}
           </span>
-        </label>
+
+          {!trusted && (
+            <label className="mt-2 flex cursor-pointer items-start gap-2.5 rounded-md border border-[var(--border)] bg-[var(--surface-raised)] p-2.5 text-[12px] leading-relaxed text-[var(--text-secondary)]">
+              <input
+                type="checkbox"
+                checked={modal.confirmed}
+                onChange={(e) =>
+                  onChange({ ...modal, confirmed: e.target.checked })
+                }
+                className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)]"
+              />
+              <span>
+                I confirm{" "}
+                <span className="break-all font-mono text-[var(--text-primary)]">
+                  {modal.to.trim() || "this address"}
+                </span>{" "}
+                is the correct email for {r.employeeName}.
+              </span>
+            </label>
+          )}
+        </div>
 
         <div>
           <FieldLabel>CC</FieldLabel>
@@ -92,7 +122,8 @@ export function DecisionModal({
         </button>
         <button
           onClick={onConfirm}
-          disabled={modal.sending || !modal.to.trim()}
+          disabled={modal.sending || !modal.to.trim() || blocked}
+          title={blocked ? "Confirm the recipient address first" : undefined}
           className={`press min-h-10 rounded-md px-4 py-2.5 text-[13px] font-semibold disabled:opacity-50 ${
             approving
               ? "accent"

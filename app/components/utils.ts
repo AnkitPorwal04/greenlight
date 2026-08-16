@@ -19,6 +19,9 @@ export interface ModalState {
   note: string;
   sending: boolean;
   error?: string;
+  // Manager ticked "this recipient is correct" for an address that is not
+  // verified from the directory. Required before an unverified mail can send.
+  confirmed: boolean;
 }
 
 export const EMAIL_RE = /^[\w.+-]+@[\w-]+(\.[\w-]+)+$/;

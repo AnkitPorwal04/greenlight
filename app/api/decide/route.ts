@@ -3,6 +3,7 @@ import { getAuthorizedClient } from "@/lib/google";
 import { getUserFromRequest } from "@/lib/session";
 import { sendDecisionMail } from "@/lib/mailer";
 import { saveDecision, loadDecisions, deleteDecision } from "@/lib/store";
+import { loadEmployees } from "@/lib/employees";
 import type { LeaveRequest } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +15,8 @@ interface DecideBody {
   cc: string[];
   body?: string;
   note?: string;
+  // Manager explicitly confirmed a recipient that is not in the directory.
+  confirmed?: boolean;
 }
 
 const EMAIL_RE = /^[\w.+-]+@[\w-]+(\.[\w-]+)+$/;
@@ -58,6 +61,26 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+
+  // Mis-send guard: only allow sending to the address verified from the
+  // directory unless the manager explicitly confirmed the recipient. This
+  // stops decisions going to a guessed address (or a wrong one typed in),
+  // and is enforced here so a client bug or direct API call can't skip it.
+  const employees = await loadEmployees();
+  const dirEmail = employees[request.employeeCode?.toUpperCase() ?? ""]?.email;
+  const recipientTrusted =
+    !!dirEmail && dirEmail.toLowerCase() === to.trim().toLowerCase();
+  if (!recipientTrusted && body.confirmed !== true) {
+    return NextResponse.json(
+      {
+        error: "unverified_recipient",
+        message:
+          "This address is not verified from your employee directory. Confirm the recipient (or add them to the directory) before sending.",
+      },
+      { status: 400 }
+    );
+  }
+
   const cc = cleanCc(body.cc);
 
   // Idempotency guard: a request that was already approved/rejected has already
