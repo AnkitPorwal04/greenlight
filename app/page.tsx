@@ -92,6 +92,7 @@ export default function Home() {
     } catch {
       if (loadId === loadIdRef.current) {
         setFetchError("Could not reach the server");
+        setCapped(false);
       }
     } finally {
       if (minVisible) await minVisible;
