@@ -58,6 +58,7 @@ export default function Home() {
   const [view, setView] = useState<View>("dashboard");
   const [showDirectory, setShowDirectory] = useState(false);
   const [confirmClearAll, setConfirmClearAll] = useState(false);
+  const [capped, setCapped] = useState(false);
   const [query, setQuery] = useState("");
   const [exiting, setExiting] = useState<string[]>([]);
   const [pulse, setPulse] = useState<{ id: string; action: Action } | null>(
@@ -83,9 +84,11 @@ export default function Home() {
       if (!res.ok) {
         if (data.error !== "not_connected") setFetchError(data.error);
         setRequests([]);
+        setCapped(false);
         return;
       }
       setRequests(data.requests);
+      setCapped(Boolean(data.capped));
     } catch {
       if (loadId === loadIdRef.current) {
         setFetchError("Could not reach the server");
@@ -572,6 +575,13 @@ export default function Home() {
                     </div>
                   ))}
                 </div>
+              )}
+
+              {capped && !query.trim() && !showSkeleton && (
+                <p className="mt-8 border-t border-[var(--border)] pt-4 text-center text-[11px] text-[var(--text-muted)]">
+                  Showing the latest 50 matching requests. Older ones are not
+                  shown yet.
+                </p>
               )}
             </section>
           </>

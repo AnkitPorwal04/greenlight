@@ -132,7 +132,14 @@ export async function GET(req: NextRequest) {
         new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime()
     );
 
-    return NextResponse.json({ requests, selfEmail });
+    // The Gmail search is capped at 50; a nextPageToken means older matching
+    // mails exist beyond what we fetched, so the UI can say so instead of
+    // silently hiding them.
+    return NextResponse.json({
+      requests,
+      selfEmail,
+      capped: Boolean(list.data.nextPageToken),
+    });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "gmail_error" },
