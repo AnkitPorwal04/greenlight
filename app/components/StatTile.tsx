@@ -22,13 +22,13 @@ export function StatStrip({
 }) {
   return (
     <div className="overflow-hidden">
-      <dl className="-ml-6 flex flex-wrap items-stretch gap-y-6 sm:-ml-10">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-6 sm:-ml-10 sm:flex sm:flex-wrap sm:items-stretch sm:gap-0">
         {items.map((item) => {
           const t = TONES[item.tone];
           return (
             <div
               key={item.label}
-              className="min-w-[5.5rem] flex-1 border-l border-[var(--border)] px-6 sm:min-w-0 sm:flex-none sm:px-10"
+              className="min-w-0 sm:flex-none sm:border-l sm:border-[var(--border)] sm:px-10"
             >
               {loading ? (
                 <div className="skeleton h-8 w-10 rounded" />
@@ -39,8 +39,8 @@ export function StatStrip({
                   {item.value}
                 </dd>
               )}
-              <dt className="mt-2 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">
-                <span className={`lamp-dot h-[5px] w-[5px] ${t.lamp}`} />
+              <dt className="mt-2 flex items-center gap-1.5 whitespace-nowrap text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">
+                <span className={`lamp-dot h-[5px] w-[5px] shrink-0 ${t.lamp}`} />
                 {item.label}
               </dt>
             </div>
