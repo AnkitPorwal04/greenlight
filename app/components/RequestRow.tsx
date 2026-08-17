@@ -82,7 +82,7 @@ export function RequestRow({
       onFocusCapture={onSelect}
       className={`panel-hover group px-1 py-4 outline-none transition-colors sm:px-2 ${
         selected
-          ? "bg-[var(--accent-soft)] ring-2 ring-inset ring-[var(--accent-ring)]"
+          ? "sm:bg-[var(--accent-soft)] sm:ring-2 sm:ring-inset sm:ring-[var(--accent-ring)]"
           : ""
       } ${exiting ? "row-exit" : ""}`}
     >
