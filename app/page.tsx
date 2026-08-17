@@ -425,7 +425,7 @@ export default function Home() {
   }, [selectedId]);
 
   return (
-    <div className="app-bg flex min-h-screen flex-1 flex-col">
+    <div className="app-bg flex min-h-dvh flex-1 flex-col">
       <Navbar
         view={view}
         onView={setView}
@@ -453,9 +453,9 @@ export default function Home() {
           <ConnectHero />
         ) : (
           <>
-            <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+            <div className="mb-8 flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:gap-4">
               <div className="min-w-0">
-                <h1 className="text-[34px] font-semibold leading-none tracking-[-0.03em] text-[var(--text-primary)] sm:text-[42px]">
+                <h1 className="text-[30px] font-semibold leading-none tracking-[-0.03em] text-[var(--text-primary)] sm:text-[42px]">
                   {copy.title}
                 </h1>
                 <p className="mt-3 text-[13px] text-[var(--text-muted)]">
@@ -465,7 +465,7 @@ export default function Home() {
               {view === "dashboard" && pending.length > 0 && (
                 <button
                   onClick={() => setConfirmClearAll(true)}
-                  className="press inline-flex shrink-0 items-center gap-2 rounded-md px-2.5 py-2 text-[12px] font-medium text-[var(--text-muted)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
+                  className="press -ml-2.5 inline-flex min-h-10 shrink-0 items-center gap-2 rounded-md px-2.5 py-2 text-[12px] font-medium text-[var(--text-muted)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)] sm:ml-0"
                 >
                   Mark all
                   <span className="font-mono">{pending.length}</span>
@@ -502,7 +502,7 @@ export default function Home() {
               </h2>
               <div className="flex items-center gap-4">
                 {view === "dashboard" && (
-                  <span className="hidden items-center gap-2 text-[11px] text-[var(--text-muted)] lg:flex">
+                  <span className="touch-hide hidden items-center gap-2 text-[11px] text-[var(--text-muted)] lg:flex">
                     <kbd className="kbd">A</kbd>pprove
                     <kbd className="kbd">R</kbd>eject
                     <kbd className="kbd">H</kbd>andled

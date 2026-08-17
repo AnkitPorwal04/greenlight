@@ -35,6 +35,17 @@ function Meta({ children }: { children: React.ReactNode }) {
   return <span className="text-[var(--text-muted)]">{children}</span>;
 }
 
+function MetaSegment({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex whitespace-nowrap items-center gap-x-2">
+      <span aria-hidden="true" className="text-[var(--text-muted)]">
+        ·
+      </span>
+      {children}
+    </span>
+  );
+}
+
 export function RequestRow({
   request: r,
   exiting,
@@ -96,7 +107,7 @@ export function RequestRow({
             <h3 className="min-w-0 max-w-full truncate text-[15px] font-semibold tracking-tight text-[var(--text-primary)]">
               {r.employeeName}
             </h3>
-            <span className="font-mono text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
+            <span className="min-w-0 max-w-full truncate font-mono text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
               {r.employeeCode}
             </span>
             {isPending && !r.emailVerified && (
@@ -111,27 +122,34 @@ export function RequestRow({
           </div>
 
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] lg:hidden">
-            <span className={`font-medium ${leaveTypeStyle(type)}`}>
+            <span
+              className={`whitespace-nowrap font-medium ${leaveTypeStyle(type)}`}
+            >
               {type}
             </span>
-            <Meta>·</Meta>
-            <span className="font-mono text-[var(--text-secondary)]">
-              {dateRange(r)}
-            </span>
-            <Meta>·</Meta>
-            <Meta>
-              <span className="font-mono">{dayCount(r.numberOfDays)}</span>
-            </Meta>
-            <Meta>·</Meta>
-            <Meta>
-              <span className="font-mono">{clockTime(r.receivedAt)}</span>
-            </Meta>
+            <MetaSegment>
+              <span className="whitespace-nowrap font-mono text-[var(--text-secondary)]">
+                {dateRange(r)}
+              </span>
+            </MetaSegment>
+            <MetaSegment>
+              <Meta>
+                <span className="font-mono">{dayCount(r.numberOfDays)}</span>
+              </Meta>
+            </MetaSegment>
+            {clockTime(r.receivedAt) && (
+              <MetaSegment>
+                <Meta>
+                  <span className="font-mono">{clockTime(r.receivedAt)}</span>
+                </Meta>
+              </MetaSegment>
+            )}
           </div>
 
           <button
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
-            className="mt-1.5 flex w-full items-start gap-1.5 py-1.5 text-left md:py-0.5"
+            className="mt-1.5 flex min-h-10 w-full items-start gap-1.5 py-1.5 text-left md:min-h-0 md:py-0.5"
           >
             <span
               className={`min-w-0 break-words text-[13px] leading-relaxed text-[var(--text-muted)] transition hover:text-[var(--text-secondary)] ${
@@ -194,7 +212,7 @@ export function RequestRow({
                   <dt className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
                     CC on reply
                   </dt>
-                  <dd className="mt-1 break-words font-mono text-[var(--text-primary)]">
+                  <dd className="mt-1 break-all font-mono text-[var(--text-primary)]">
                     {r.ccRecipients.join(", ")}
                   </dd>
                 </div>
@@ -212,7 +230,7 @@ export function RequestRow({
               <div className="min-w-0 sm:col-span-2">
                 <button
                   onClick={onViewEmail}
-                  className="press inline-flex min-h-9 items-center gap-1.5 text-[12px] font-medium text-[var(--text-secondary)] underline decoration-[var(--border-strong)] underline-offset-4 hover:text-[var(--text-primary)]"
+                  className="press inline-flex min-h-10 items-center gap-1.5 text-[12px] font-medium text-[var(--text-secondary)] underline decoration-[var(--border-strong)] underline-offset-4 hover:text-[var(--text-primary)] md:min-h-9"
                 >
                   <IconMail className="h-3.5 w-3.5" />
                   View original email
@@ -313,7 +331,7 @@ export function RequestRow({
       </div>
 
       {isPending && (
-        <div className="mt-3 flex items-center gap-2 pl-[4.4rem] sm:hidden">
+        <div className="mt-3 flex items-center gap-2 sm:hidden">
           <button
             onClick={() => onDecide("approved")}
             disabled={busy}
@@ -333,7 +351,8 @@ export function RequestRow({
           <button
             onClick={onMark}
             disabled={busy}
-            className="press inline-flex h-10 shrink-0 items-center justify-center rounded-md px-3 text-[13px] font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] disabled:opacity-50"
+            aria-label="Mark as handled — no mail sent"
+            className="press inline-flex h-10 shrink-0 items-center justify-center rounded-md border border-[var(--border)] bg-[var(--surface-sunken)] px-3 text-[13px] font-medium text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] disabled:opacity-50"
           >
             Handled
           </button>

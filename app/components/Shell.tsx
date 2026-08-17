@@ -77,12 +77,14 @@ function SearchField({
   autoFocus,
   className,
   inputId,
+  placeholder = "Search name or code — press /",
 }: {
   query: string;
   onQuery: (q: string) => void;
   autoFocus?: boolean;
   className?: string;
   inputId?: string;
+  placeholder?: string;
 }) {
   return (
     <div className={`relative ${className ?? ""}`}>
@@ -92,15 +94,15 @@ function SearchField({
         value={query}
         onChange={(e) => onQuery(e.target.value)}
         autoFocus={autoFocus}
-        placeholder="Search name or code — press /"
+        placeholder={placeholder}
         aria-label="Search requests by name or employee code"
-        className="field w-full rounded-md py-2.5 pl-8 pr-10 text-[13px] transition md:py-1.5"
+        className="field w-full rounded-md py-2 pl-8 pr-10 text-[13px] transition md:py-1.5"
       />
       {query ? (
         <button
           onClick={() => onQuery("")}
           aria-label="Clear search"
-          className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded text-[var(--text-muted)] transition hover:text-[var(--text-primary)] md:h-7 md:w-7"
+          className="absolute right-0.5 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded text-[var(--text-muted)] transition hover:text-[var(--text-primary)] md:right-1 md:h-7 md:w-7"
         >
           <IconX className="h-3.5 w-3.5" />
         </button>
@@ -157,7 +159,7 @@ function AccountMenu({
         aria-expanded={open}
         aria-label="Account menu"
         data-tip="That's you!"
-        className={`tip tip-end press relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${
+        className={`tip tip-end press relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold md:h-9 md:w-9 ${
           open
             ? "bg-[var(--accent-soft)] text-[var(--accent)]"
             : "bg-[var(--surface-raised)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
@@ -204,7 +206,7 @@ function AccountMenu({
                     setOpen(false);
                     onDirectory();
                   }}
-                  className="press flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-[13px] text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
+                  className="press flex min-h-11 w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-[13px] text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
                 >
                   <IconUsers className="h-4 w-4 text-[var(--text-muted)]" />
                   Employee directory
@@ -219,7 +221,7 @@ function AccountMenu({
                   setOpen(false);
                   onDisconnect();
                 }}
-                className="press flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-[13px] text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
+                className="press flex min-h-11 w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-[13px] text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
               >
                 <IconLogout className="h-4 w-4 text-[var(--text-muted)]" />
                 Disconnect Gmail
@@ -228,7 +230,7 @@ function AccountMenu({
               <a
                 role="menuitem"
                 href="/api/auth/login"
-                className="press flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-[13px] text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
+                className="press flex min-h-11 w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-[13px] text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
               >
                 <IconLogout className="h-4 w-4 text-[var(--text-muted)]" />
                 Connect Gmail
@@ -240,7 +242,7 @@ function AccountMenu({
                 setOpen(false);
                 onLock();
               }}
-              className="press flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-[13px] text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
+              className="press flex min-h-11 w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-[13px] text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
             >
               <IconLock className="h-4 w-4 text-[var(--text-muted)]" />
               Lock app
@@ -273,7 +275,7 @@ export function Navbar({
 
   return (
     <header className="navbar sticky top-0 z-40">
-      <div className="flex h-[var(--nav-bar-h)] items-center gap-3 px-4 sm:px-6 lg:px-10">
+      <div className="flex h-[var(--nav-bar-h)] items-center gap-2 px-4 sm:gap-3 sm:px-6 lg:px-10">
         <div className="flex min-w-0 items-center gap-2">
           <button
             onClick={onHome}
@@ -313,7 +315,7 @@ export function Navbar({
           />
         </nav>
 
-        <div className="ml-auto flex shrink-0 items-center gap-2.5">
+        <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-2.5">
           {connected && (
             <SearchField
               query={query}
@@ -328,7 +330,7 @@ export function Navbar({
               aria-label={mobileSearch ? "Close search" : "Search"}
               aria-expanded={mobileSearch}
               data-tip="Find someone"
-              className="tip press flex h-9 w-9 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)] md:hidden"
+              className="tip press flex h-10 w-10 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)] md:hidden"
             >
               {mobileSearch ? (
                 <IconX className="h-4 w-4" />
@@ -343,7 +345,7 @@ export function Navbar({
               disabled={loading}
               aria-label="Sync inbox"
               data-tip="Fetch fresh mail"
-              className="tip press flex h-9 w-9 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)] disabled:opacity-50"
+              className="tip press flex h-10 w-10 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)] disabled:opacity-50 md:h-9 md:w-9"
             >
               <IconRefresh
                 className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
@@ -368,13 +370,14 @@ export function Navbar({
       </div>
 
       <div className="border-t border-[var(--border)] md:hidden">
-        <div className="flex h-[var(--nav-tabs-h)] items-center gap-6 overflow-x-auto px-4">
+        <div className="scrollbar-none flex h-[var(--nav-tabs-h)] items-center gap-6 overflow-x-auto overflow-y-hidden px-4">
           {mobileSearch && connected ? (
             <SearchField
               query={query}
               onQuery={onQuery}
               autoFocus
               inputId="gl-search-mobile"
+              placeholder="Search name or code"
               className="w-full"
             />
           ) : (

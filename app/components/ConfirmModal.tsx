@@ -22,7 +22,7 @@ export function ConfirmModal({
     <Modal onClose={() => !busy && onClose()}>
       <ModalHeader title={title} />
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 text-[13px] leading-relaxed text-[var(--text-secondary)]">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 text-[13px] leading-relaxed text-[var(--text-secondary)] sm:px-5">
         {message}
       </div>
 

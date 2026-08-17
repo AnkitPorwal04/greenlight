@@ -184,9 +184,9 @@ export function SkeletonList() {
                   <span className="lamp-dot lamp-dim-green h-[5px] w-[5px]" />
                 </div>
                 <div className="skeleton h-9 w-9 shrink-0 rounded-full" />
-                <div className="flex-1 space-y-2">
-                  <div className="skeleton h-3.5 w-44 rounded" />
-                  <div className="skeleton h-3 w-64 rounded" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="skeleton h-3.5 w-full max-w-44 rounded" />
+                  <div className="skeleton h-3 w-full max-w-64 rounded" />
                 </div>
                 <div className="skeleton hidden h-3.5 w-32 rounded lg:block" />
                 <div className="skeleton hidden h-7 w-24 rounded-md sm:block" />
@@ -203,7 +203,7 @@ export function Toast({ message, tone = "success" }: ToastState) {
   return (
     <div
       role="status"
-      className="rise-in panel fixed bottom-5 left-1/2 z-50 flex max-w-[92vw] -translate-x-1/2 items-center gap-2.5 rounded-lg px-4 py-2.5 text-[13px] text-[var(--text-primary)] shadow-xl shadow-[var(--shadow)]"
+      className="rise-in panel fixed bottom-[calc(1.25rem+var(--safe-bottom))] left-1/2 z-50 flex max-w-[92vw] -translate-x-1/2 items-center gap-2.5 rounded-lg px-4 py-2.5 text-[13px] text-[var(--text-primary)] shadow-xl shadow-[var(--shadow)]"
     >
       <span
         aria-hidden="true"
@@ -211,7 +211,7 @@ export function Toast({ message, tone = "success" }: ToastState) {
           tone === "error" ? "lamp-red" : "lamp-green"
         }`}
       />
-      {message}
+      <span className="min-w-0 break-words">{message}</span>
     </div>
   );
 }
