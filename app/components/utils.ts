@@ -233,6 +233,27 @@ export function dateRange(request: LeaveRequest) {
     : `${request.fromDate} – ${request.toDate}`;
 }
 
+// Shorter range for tight spaces (mobile). When both dates share the same
+// month and year, collapse "17 Aug 2026 – 18 Aug 2026" to "17 – 18 Aug 2026".
+// Falls back to the full range if the dates do not parse as "DD Mon YYYY".
+export function dateRangeCompact(request: LeaveRequest) {
+  const { fromDate, toDate } = request;
+  if (!fromDate || !toDate || fromDate === toDate) {
+    return fromDate || toDate || "";
+  }
+  const from = fromDate.trim().split(/\s+/);
+  const to = toDate.trim().split(/\s+/);
+  if (
+    from.length === 3 &&
+    to.length === 3 &&
+    from[1] === to[1] &&
+    from[2] === to[2]
+  ) {
+    return `${from[0]} – ${toDate}`;
+  }
+  return `${fromDate} – ${toDate}`;
+}
+
 export function dayCount(n: number) {
   return `${n} ${n === 1 ? "day" : "days"}`;
 }

@@ -14,6 +14,7 @@ import {
   avatarTone,
   clockTime,
   dateRange,
+  dateRangeCompact,
   dayCount,
   initials,
   leaveTypeStyle,
@@ -35,9 +36,15 @@ function Meta({ children }: { children: React.ReactNode }) {
   return <span className="text-[var(--text-muted)]">{children}</span>;
 }
 
-function MetaSegment({ children }: { children: React.ReactNode }) {
+function MetaSegment({
+  children,
+  className = "inline-flex",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <span className="inline-flex whitespace-nowrap items-center gap-x-2">
+    <span className={`${className} whitespace-nowrap items-center gap-x-2`}>
       <span aria-hidden="true" className="text-[var(--text-muted)]">
         ·
       </span>
@@ -129,7 +136,7 @@ export function RequestRow({
             </span>
             <MetaSegment>
               <span className="whitespace-nowrap font-mono text-[var(--text-secondary)]">
-                {dateRange(r)}
+                {dateRangeCompact(r)}
               </span>
             </MetaSegment>
             <MetaSegment>
@@ -137,8 +144,10 @@ export function RequestRow({
                 <span className="font-mono">{dayCount(r.numberOfDays)}</span>
               </Meta>
             </MetaSegment>
+            {/* Mail arrival time is shown only from lg up; on phones it just
+                overflowed the meta line onto a stray second row. */}
             {clockTime(r.receivedAt) && (
-              <MetaSegment>
+              <MetaSegment className="hidden sm:inline-flex">
                 <Meta>
                   <span className="font-mono">{clockTime(r.receivedAt)}</span>
                 </Meta>
