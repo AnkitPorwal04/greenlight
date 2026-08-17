@@ -90,13 +90,13 @@ export function Modal({
       aria-modal="true"
       aria-labelledby={titleId}
       onClick={() => dismissible && onClose()}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-[var(--overlay)] p-4 backdrop-blur-[2px] sm:items-center"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-[var(--overlay)] p-3 pb-[max(0.75rem,var(--safe-bottom))] pt-[max(0.75rem,var(--safe-top))] backdrop-blur-[2px] sm:items-center sm:p-4"
     >
       <div
         ref={panelRef}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className="rise-in panel flex max-h-[85dvh] w-full max-w-lg flex-col overflow-hidden rounded-xl shadow-2xl shadow-[var(--shadow)] outline-none"
+        className="rise-in panel flex max-h-[88dvh] w-full max-w-lg flex-col overflow-hidden rounded-xl shadow-2xl shadow-[var(--shadow)] outline-none sm:max-h-[85dvh]"
       >
         <ModalTitleContext.Provider value={titleId}>
           {children}
@@ -115,7 +115,7 @@ export function ModalHeader({
 }) {
   const titleId = useContext(ModalTitleContext);
   return (
-    <div className="shrink-0 border-b border-[var(--border)] px-5 py-4">
+    <div className="shrink-0 border-b border-[var(--border)] px-4 py-4 sm:px-5">
       <h2
         id={titleId}
         className="break-words text-[17px] font-semibold tracking-tight text-[var(--text-primary)]"

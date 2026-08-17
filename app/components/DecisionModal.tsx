@@ -183,7 +183,7 @@ function CcEditor({
               type="button"
               onClick={() => remove(addr)}
               aria-label={`Remove ${addr}`}
-              className="shrink-0 text-[var(--text-muted)] transition hover:text-[var(--c-rose)]"
+              className="-mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--text-muted)] transition hover:text-[var(--c-rose)]"
             >
               <IconX className="h-3 w-3" />
             </button>

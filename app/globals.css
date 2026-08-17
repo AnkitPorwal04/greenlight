@@ -37,14 +37,18 @@
   --hairline: var(--border);
   --nav-bar-h: 3.5rem;
   --nav-tabs-h: 2.75rem;
-  --nav-h: calc(var(--nav-bar-h) + var(--nav-tabs-h) + 1px);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --nav-h: calc(var(--nav-bar-h) + var(--nav-tabs-h) + var(--safe-top) + 1px);
 }
 
 @media (min-width: 48rem) {
   :root {
     --nav-bar-h: 3.75rem;
     --nav-tabs-h: 0rem;
-    --nav-h: calc(var(--nav-bar-h) + 1px);
+    --nav-h: calc(var(--nav-bar-h) + var(--safe-top) + 1px);
   }
 }
 
@@ -109,6 +113,8 @@ body {
   color: var(--text-primary);
   font-family: var(--font-sans), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
   transition:
     background-color 0.18s ease,
     color 0.18s ease;
@@ -137,6 +143,7 @@ body {
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
+  padding-top: var(--safe-top);
 }
 
 .menu-pop {
@@ -147,6 +154,18 @@ body {
 
 .footer-bar {
   border-top: 1px solid var(--border);
+  padding-bottom: var(--safe-bottom);
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .sticky-date {
@@ -439,18 +458,39 @@ html.light .theme-when-dark {
   }
 }
 
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+@media (pointer: fine) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 9999px;
+    border: 2px solid var(--bg);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--border-strong);
+  }
 }
-::-webkit-scrollbar-track {
-  background: transparent;
+
+@media (pointer: coarse) {
+  .kbd,
+  .touch-hide {
+    display: none !important;
+  }
+
+  .tip::after {
+    content: none;
+  }
 }
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 9999px;
-  border: 2px solid var(--bg);
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--border-strong);
+
+@media (max-width: 47.99rem) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
 }

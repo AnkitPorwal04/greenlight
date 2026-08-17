@@ -35,7 +35,7 @@ export function ThemeToggleIcon() {
       onClick={toggle}
       aria-label="Toggle colour theme"
       data-tip="Switch the vibe"
-      className="tip press flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
+      className="tip press flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)] md:h-9 md:w-9"
     >
       <span className="theme-when-dark flex">
         <IconSun className="h-4 w-4" />

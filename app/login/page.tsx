@@ -35,8 +35,8 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="app-bg relative flex min-h-screen flex-1 items-center justify-center px-5 py-16">
-      <div className="absolute right-4 top-4">
+    <main className="app-bg relative flex min-h-dvh flex-1 items-center justify-center px-5 pb-[calc(4rem+var(--safe-bottom))] pt-[calc(4rem+var(--safe-top))]">
+      <div className="absolute right-4 top-[calc(1rem+var(--safe-top))]">
         <ThemeToggleIcon />
       </div>
       <form onSubmit={submit} className="rise-in w-full max-w-xs">
