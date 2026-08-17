@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
       gmail.users.getProfile({ userId: "me" }),
       gmail.users.messages.list({
         userId: "me",
-        q: SEARCH_QUERY,
+        q: `${SEARCH_QUERY} after:${process.env.STATS_SINCE ?? "2026/08/01"}`,
         maxResults: MAX_MESSAGES,
       }),
     ]);
