@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/api/auth/passcode"];
+const PUBLIC_PATHS = ["/login", "/api/auth/passcode", "/manifest.webmanifest", "/icons/", "/icon.svg"];
 
 async function sha256Hex(input: string): Promise<string> {
   const digest = await crypto.subtle.digest(
