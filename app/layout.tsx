@@ -1,18 +1,23 @@
 import type { Metadata, Viewport } from "next";
-import { Inter_Tight, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
-const interTight = Inter_Tight({
+// Fonts are self-hosted (the latin variable woff2 files live in ./fonts) rather
+// than fetched from Google at build time. This keeps the build from failing when
+// the Google Fonts request is rate-limited or times out in CI.
+const interTight = localFont({
+  src: "./fonts/InterTight-latin.woff2",
   variable: "--font-sans",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: "400 700",
+  display: "swap",
 });
 
-const jetbrainsMono = JetBrains_Mono({
+const jetbrainsMono = localFont({
+  src: "./fonts/JetBrainsMono-latin.woff2",
   variable: "--font-mono",
-  subsets: ["latin"],
-  weight: ["400", "500"],
+  weight: "400 500",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
