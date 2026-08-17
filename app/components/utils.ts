@@ -2,7 +2,7 @@ import type { LeaveRequest } from "@/lib/types";
 
 export type AuthState = { connected: boolean; email?: string };
 export type Action = "approved" | "rejected";
-export type View = "dashboard" | "history";
+export type View = "dashboard" | "history" | "stats";
 export type ToastTone = "success" | "error";
 
 export interface ToastState {
@@ -58,6 +58,40 @@ export function leaveTypeStyle(type: string) {
   return (
     LEAVE_TYPE_STYLES[type.trim().toLowerCase()] ?? "text-[var(--text-muted)]"
   );
+}
+
+const LEAVE_TYPE_COLORS: Record<string, string> = {
+  "work from home": "var(--c-sky)",
+  "casual leave": "var(--c-violet)",
+  "sick leave": "var(--c-pink)",
+  "earned leave": "var(--c-amber)",
+  "restricted holiday": "var(--c-teal)",
+};
+
+const FALLBACK_COLORS = [
+  "var(--c-emerald)",
+  "var(--c-sky)",
+  "var(--c-violet)",
+  "var(--c-amber)",
+  "var(--c-teal)",
+  "var(--c-pink)",
+];
+
+export function leaveTypeColor(type: string, index = 0) {
+  return (
+    LEAVE_TYPE_COLORS[type.trim().toLowerCase()] ??
+    FALLBACK_COLORS[index % FALLBACK_COLORS.length]
+  );
+}
+
+export function leaveTypeShort(type: string) {
+  const words = type.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "—";
+  if (words.length === 1) return words[0].slice(0, 3).toUpperCase();
+  return words
+    .map((w) => w[0].toUpperCase())
+    .join("")
+    .slice(0, 4);
 }
 
 export function statusLabel(status: string) {

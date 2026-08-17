@@ -19,7 +19,6 @@ interface NavbarProps {
   onView: (v: View) => void;
   onDirectory: () => void;
   pendingCount: number;
-  historyCount: number;
   auth: AuthState | null;
   loading: boolean;
   onSync: () => void;
@@ -259,7 +258,6 @@ export function Navbar({
   onView,
   onDirectory,
   pendingCount,
-  historyCount,
   auth,
   loading,
   onSync,
@@ -309,9 +307,14 @@ export function Navbar({
           <Tab
             active={view === "history"}
             label="History"
-            count={historyCount}
             disabled={!connected}
             onClick={() => onView("history")}
+          />
+          <Tab
+            active={view === "stats"}
+            label="Stats"
+            disabled={!connected}
+            onClick={() => onView("stats")}
           />
         </nav>
 
@@ -392,9 +395,14 @@ export function Navbar({
               <Tab
                 active={view === "history"}
                 label="History"
-                count={historyCount}
                 disabled={!connected}
                 onClick={() => onView("history")}
+              />
+              <Tab
+                active={view === "stats"}
+                label="Stats"
+                disabled={!connected}
+                onClick={() => onView("stats")}
               />
             </>
           )}
