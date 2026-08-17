@@ -22,7 +22,7 @@ export function StatStrip({
 }) {
   return (
     <div className="overflow-hidden">
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-6 sm:-ml-10 sm:flex sm:flex-wrap sm:items-stretch sm:gap-0">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-4 sm:-ml-10 sm:flex sm:flex-wrap sm:items-stretch sm:gap-0">
         {items.map((item) => {
           const t = TONES[item.tone];
           return (
@@ -34,7 +34,7 @@ export function StatStrip({
                 <div className="skeleton h-8 w-10 rounded" />
               ) : (
                 <dd
-                  className={`font-mono text-[28px] font-medium leading-none tracking-tight tabular-nums sm:text-[32px] ${t.value}`}
+                  className={`font-mono text-[22px] font-medium leading-none tracking-tight tabular-nums sm:text-[32px] ${t.value}`}
                 >
                   {item.value}
                 </dd>
