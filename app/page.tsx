@@ -8,6 +8,7 @@ import { EmailModal } from "./components/EmailModal";
 import { RequestRow } from "./components/RequestRow";
 import { Footer, Navbar } from "./components/Shell";
 import { StatStrip } from "./components/StatTile";
+import { StatsView } from "./components/StatsView";
 import {
   ArtSearch,
   ArtTray,
@@ -28,6 +29,7 @@ import {
   type View,
 } from "./components/utils";
 import { composeDecisionMail } from "@/lib/compose";
+import type { StatsPayload } from "@/lib/stats";
 import type { LeaveRequest } from "@/lib/types";
 
 const PAGE_COPY: Record<View, { title: string; subtitle: string }> = {
@@ -39,10 +41,16 @@ const PAGE_COPY: Record<View, { title: string; subtitle: string }> = {
     title: "History",
     subtitle: "Every request you have already actioned, newest first.",
   },
+  stats: {
+    title: "Stats",
+    subtitle: "Leave patterns across your team.",
+  },
 };
 
 const EXIT_MS = 250;
 const PULSE_MS = 220;
+const HISTORY_LIMIT = 50;
+const NO_REQUESTS: LeaveRequest[] = [];
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -67,8 +75,39 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busyIds, setBusyIds] = useState<string[]>([]);
   const [mobileSearch, setMobileSearch] = useState(false);
+  const [statsData, setStatsData] = useState<StatsPayload | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
   const loadIdRef = useRef(0);
+  const statsLoadIdRef = useRef(0);
   const keyboardNavRef = useRef(false);
+
+  const loadStats = useCallback(async () => {
+    const loadId = statsLoadIdRef.current + 1;
+    statsLoadIdRef.current = loadId;
+    setStatsLoading(true);
+    setStatsError(null);
+    try {
+      const res = await fetch("/api/stats");
+      const data = await res.json();
+      if (loadId !== statsLoadIdRef.current) return;
+      if (!res.ok) {
+        setStatsError(
+          data.error === "not_connected"
+            ? "Gmail is not connected"
+            : (data.error ?? "Could not load stats")
+        );
+        return;
+      }
+      setStatsData(data as StatsPayload);
+    } catch {
+      if (loadId === statsLoadIdRef.current) {
+        setStatsError("Could not reach the server");
+      }
+    } finally {
+      if (loadId === statsLoadIdRef.current) setStatsLoading(false);
+    }
+  }, []);
 
   const loadRequests = useCallback(async (opts?: { skeleton?: boolean }) => {
     const loadId = loadIdRef.current + 1;
@@ -136,10 +175,21 @@ export default function Home() {
     () => requests.filter((r) => r.status === "pending"),
     [requests]
   );
-  const history = useMemo(
-    () => requests.filter((r) => r.status !== "pending"),
+  const decided = useMemo(
+    () =>
+      requests
+        .filter((r) => r.status !== "pending")
+        .sort(
+          (a, b) =>
+            new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime()
+        ),
     [requests]
   );
+  const history = useMemo(
+    () => decided.slice(0, HISTORY_LIMIT),
+    [decided]
+  );
+  const historyTrimmed = decided.length > HISTORY_LIMIT;
   const stats = useMemo(
     () => ({
       pending: pending.length,
@@ -150,7 +200,8 @@ export default function Home() {
     [requests, pending]
   );
 
-  const visible = view === "dashboard" ? pending : history;
+  const visible =
+    view === "dashboard" ? pending : view === "history" ? history : NO_REQUESTS;
   const filtered = useMemo(
     () => visible.filter((r) => matchesQuery(r, query)),
     [visible, query]
@@ -293,6 +344,8 @@ export default function Home() {
       }
       setAuth({ connected: false });
       setRequests([]);
+      setStatsData(null);
+      setStatsError(null);
       setFetchError(null);
       setQuery("");
       setView("dashboard");
@@ -428,13 +481,20 @@ export default function Home() {
     <div className="app-bg flex min-h-dvh flex-1 flex-col">
       <Navbar
         view={view}
-        onView={setView}
+        onView={(next) => {
+          setView(next);
+          if (next === "stats" && connected && !statsData && !statsLoading) {
+            loadStats();
+          }
+        }}
         onDirectory={() => setShowDirectory(true)}
         pendingCount={stats.pending}
-        historyCount={history.length}
         auth={auth}
-        loading={loading}
-        onSync={() => loadRequests({ skeleton: true })}
+        loading={loading || (view === "stats" && statsLoading)}
+        onSync={() => {
+          loadRequests({ skeleton: true });
+          if (statsData || view === "stats") loadStats();
+        }}
         query={query}
         onQuery={setQuery}
         mobileSearch={mobileSearch}
@@ -474,119 +534,156 @@ export default function Home() {
               )}
             </div>
 
-            <section
-              aria-label="Overview"
-              className="border-y border-[var(--border)] py-5"
-            >
-              <StatStrip
-                loading={showSkeleton}
-                items={[
-                  { label: "Pending", value: stats.pending, tone: "amber" },
-                  { label: "Approved", value: stats.approved, tone: "emerald" },
-                  { label: "Rejected", value: stats.rejected, tone: "rose" },
-                  { label: "Handled", value: stats.handled, tone: "neutral" },
-                ]}
+            {view === "stats" ? (
+              <StatsView
+                data={statsData}
+                loading={statsLoading}
+                error={statsError}
+                onRetry={loadStats}
               />
-            </section>
+            ) : (
+              <>
+                <section
+                  aria-label="Overview"
+                  className="border-y border-[var(--border)] py-5"
+                >
+                  <StatStrip
+                    loading={showSkeleton}
+                    items={[
+                      { label: "Pending", value: stats.pending, tone: "amber" },
+                      {
+                        label: "Approved",
+                        value: stats.approved,
+                        tone: "emerald",
+                      },
+                      { label: "Rejected", value: stats.rejected, tone: "rose" },
+                      {
+                        label: "Handled",
+                        value: stats.handled,
+                        tone: "neutral",
+                      },
+                    ]}
+                  />
+                </section>
 
-            {fetchError && (
-              <p className="mt-6 flex items-start gap-2 border-l-2 border-[var(--signal-red)] py-1 pl-3 text-[13px] text-[var(--c-rose)]">
-                <IconAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                {fetchError}
-              </p>
-            )}
-
-            <div className="mt-10 flex items-baseline justify-between gap-3">
-              <h2 className="text-[10px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
-                {view === "dashboard" ? "Awaiting decision" : "Decision log"}
-              </h2>
-              <div className="flex items-center gap-4">
-                {view === "dashboard" && (
-                  <span className="touch-hide hidden items-center gap-2 text-[11px] text-[var(--text-muted)] lg:flex">
-                    <kbd className="kbd">A</kbd>pprove
-                    <kbd className="kbd">R</kbd>eject
-                    <kbd className="kbd">H</kbd>andled
-                    <kbd className="kbd">E</kbd>mail
-                  </span>
+                {fetchError && (
+                  <p className="mt-6 flex items-start gap-2 border-l-2 border-[var(--signal-red)] py-1 pl-3 text-[13px] text-[var(--c-rose)]">
+                    <IconAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                    {fetchError}
+                  </p>
                 )}
-                <span className="font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
-                  {query.trim()
-                    ? `${filtered.length}/${visible.length}`
-                    : `${visible.length} ${visible.length === 1 ? "request" : "requests"}`}
-                </span>
-              </div>
-            </div>
 
-            <section className="mt-5">
-              {showSkeleton ? (
-                <SkeletonList />
-              ) : groups.length === 0 ? (
-                query.trim() ? (
-                  <EmptyState
-                    art={<ArtSearch />}
-                    title="Nothing matches that search"
-                    hint={`No name or code contains “${query.trim()}”.`}
-                  />
-                ) : view === "dashboard" ? (
-                  <InboxZero count={history.length} />
-                ) : (
-                  <EmptyState
-                    art={<ArtTray />}
-                    title="No decisions yet"
-                    hint="Approvals and rejections will show up here."
-                  />
-                )
-              ) : (
-                <div className="space-y-10">
-                  {groups.map((group) => (
-                    <div key={group.key}>
-                      <div className="sticky-date sticky top-[var(--nav-h)] z-20 flex items-baseline gap-3 py-3">
-                        <h3 className="text-[26px] font-semibold leading-none tracking-[-0.03em] text-[var(--text-primary)] sm:text-[30px]">
-                          {group.label}
-                        </h3>
-                        {group.sub && (
-                          <span className="font-mono text-[12px] uppercase tracking-wide text-[var(--text-muted)]">
-                            {group.sub}
-                          </span>
-                        )}
-                        <span className="ml-auto font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
-                          {group.items.length}
-                        </span>
-                      </div>
-                      <div className="divide-y divide-[var(--border)] border-y border-[var(--border)]">
-                        {group.items.map((r) => (
-                          <RequestRow
-                            key={r.id}
-                            request={r}
-                            exiting={exiting.includes(r.id)}
-                            pulse={
-                              pulse?.id === r.id ? pulse.action : undefined
-                            }
-                            selected={selectedId === r.id}
-                            busy={busyIds.includes(r.id)}
-                            onSelect={() => {
-                              keyboardNavRef.current = false;
-                              setSelectedId(r.id);
-                            }}
-                            onDecide={(action) => openDecision(r, action)}
-                            onMark={() => markHandled([r.id])}
-                            onUndo={() => undoDecision(r)}
-                            onViewEmail={() => setEmailModal(r)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+                <div className="mt-10 flex items-baseline justify-between gap-3">
+                  <h2 className="text-[10px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
+                    {view === "dashboard" ? "Awaiting decision" : "Decision log"}
+                  </h2>
+                  <div className="flex items-center gap-4">
+                    {view === "dashboard" && (
+                      <span className="touch-hide hidden items-center gap-2 text-[11px] text-[var(--text-muted)] lg:flex">
+                        <kbd className="kbd">A</kbd>pprove
+                        <kbd className="kbd">R</kbd>eject
+                        <kbd className="kbd">H</kbd>andled
+                        <kbd className="kbd">E</kbd>mail
+                      </span>
+                    )}
+                    {view === "dashboard" ? (
+                      <span className="font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
+                        {query.trim()
+                          ? `${filtered.length}/${visible.length}`
+                          : `${visible.length} ${visible.length === 1 ? "request" : "requests"}`}
+                      </span>
+                    ) : query.trim() ? (
+                      <span className="font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
+                        {`${filtered.length} ${filtered.length === 1 ? "match" : "matches"}`}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
-              )}
 
-              {capped && !query.trim() && !showSkeleton && (
-                <p className="mt-8 border-t border-[var(--border)] pt-4 text-center text-[11px] text-[var(--text-muted)]">
-                  Showing the latest 50 matching requests. Older ones are not
-                  shown yet.
-                </p>
-              )}
-            </section>
+                <section className="mt-5">
+                  {showSkeleton ? (
+                    <SkeletonList />
+                  ) : groups.length === 0 ? (
+                    query.trim() ? (
+                      <EmptyState
+                        art={<ArtSearch />}
+                        title="Nothing matches that search"
+                        hint={`No name or code contains “${query.trim()}”.`}
+                      />
+                    ) : view === "dashboard" ? (
+                      <InboxZero count={decided.length} />
+                    ) : (
+                      <EmptyState
+                        art={<ArtTray />}
+                        title="No decisions yet"
+                        hint="Approvals and rejections will show up here."
+                      />
+                    )
+                  ) : (
+                    <div className="space-y-10">
+                      {groups.map((group) => (
+                        <div key={group.key}>
+                          <div className="sticky-date sticky top-[var(--nav-h)] z-20 flex items-baseline gap-3 py-3">
+                            <h3 className="text-[26px] font-semibold leading-none tracking-[-0.03em] text-[var(--text-primary)] sm:text-[30px]">
+                              {group.label}
+                            </h3>
+                            {group.sub && (
+                              <span className="font-mono text-[12px] uppercase tracking-wide text-[var(--text-muted)]">
+                                {group.sub}
+                              </span>
+                            )}
+                            <span className="ml-auto font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
+                              {group.items.length}
+                            </span>
+                          </div>
+                          <div className="divide-y divide-[var(--border)] border-y border-[var(--border)]">
+                            {group.items.map((r) => (
+                              <RequestRow
+                                key={r.id}
+                                request={r}
+                                exiting={exiting.includes(r.id)}
+                                pulse={
+                                  pulse?.id === r.id ? pulse.action : undefined
+                                }
+                                selected={selectedId === r.id}
+                                busy={busyIds.includes(r.id)}
+                                onSelect={() => {
+                                  keyboardNavRef.current = false;
+                                  setSelectedId(r.id);
+                                }}
+                                onDecide={(action) => openDecision(r, action)}
+                                onMark={() => markHandled([r.id])}
+                                onUndo={() => undoDecision(r)}
+                                onViewEmail={() => setEmailModal(r)}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {view === "history" &&
+                    historyTrimmed &&
+                    !query.trim() &&
+                    !showSkeleton && (
+                      <p className="mt-8 border-t border-[var(--border)] pt-4 text-center font-mono text-[11px] text-[var(--text-muted)]">
+                        Showing the latest 50
+                      </p>
+                    )}
+
+                  {view === "dashboard" &&
+                    capped &&
+                    !query.trim() &&
+                    !showSkeleton && (
+                      <p className="mt-8 border-t border-[var(--border)] pt-4 text-center text-[11px] text-[var(--text-muted)]">
+                        Showing the latest 50 matching requests. Older ones are
+                        not shown yet.
+                      </p>
+                    )}
+                </section>
+              </>
+            )}
           </>
         )}
       </main>
