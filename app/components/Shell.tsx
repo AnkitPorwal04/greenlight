@@ -35,12 +35,14 @@ function Tab({
   active,
   label,
   count,
+  exactCount,
   disabled,
   onClick,
 }: {
   active?: boolean;
   label: string;
   count?: number;
+  exactCount?: boolean;
   disabled?: boolean;
   onClick: () => void;
 }) {
@@ -63,10 +65,40 @@ function Tab({
             active ? "text-[var(--accent)]" : "text-[var(--text-muted)]"
           }`}
         >
-          {count > 99 ? "99+" : count}
+          {!exactCount && count > 99 ? "99+" : count}
         </span>
       ) : null}
     </button>
+  );
+}
+
+export function MonthTabs({
+  months,
+  active,
+  onSelect,
+}: {
+  months: { key: string; label: string; count: number }[];
+  active: string;
+  onSelect: (key: string) => void;
+}) {
+  if (months.length === 0) return null;
+
+  return (
+    <nav
+      aria-label="History month"
+      className="scrollbar-none -mb-px flex h-11 items-center gap-6 overflow-x-auto overflow-y-hidden"
+    >
+      {months.map((month) => (
+        <Tab
+          key={month.key}
+          active={month.key === active}
+          label={month.label}
+          count={month.count}
+          exactCount
+          onClick={() => onSelect(month.key)}
+        />
+      ))}
+    </nav>
   );
 }
 
