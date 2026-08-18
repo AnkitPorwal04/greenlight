@@ -16,12 +16,30 @@ export interface StatsMonth {
   byType: Record<string, number>;
 }
 
+export interface StatsEmployeeOutcomes {
+  approved: number;
+  rejected: number;
+  handled: number;
+  pending: number;
+}
+
+export type StatsOutcome = keyof StatsEmployeeOutcomes;
+
+export interface StatsEmployeeEntry {
+  receivedAt: string;
+  leaveType: string;
+  numberOfDays: number;
+  status: StatsOutcome;
+}
+
 export interface StatsEmployee {
   code: string;
   name: string;
   requests: number;
   days: number;
   byType: Record<string, number>;
+  outcomes: StatsEmployeeOutcomes;
+  entries: StatsEmployeeEntry[];
 }
 
 export interface StatsType {
@@ -74,6 +92,11 @@ function bump(bucket: Record<string, number>, key: string, by: number) {
   bucket[key] = (bucket[key] ?? 0) + by;
 }
 
+function receivedTime(value: string): number {
+  const ts = new Date(value).getTime();
+  return Number.isNaN(ts) ? 0 : ts;
+}
+
 export function aggregateStats(entries: StatsEntry[]): StatsPayload {
   const unique = new Map<string, StatsEntry>();
   for (const entry of entries) {
@@ -99,11 +122,15 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
     const received = new Date(entry.receivedAt);
     const validDate = !Number.isNaN(received.getTime());
 
+    const outcome: StatsOutcome =
+      entry.status === "approved" ||
+      entry.status === "rejected" ||
+      entry.status === "handled"
+        ? entry.status
+        : "pending";
+
     outcomes.applied += 1;
-    if (entry.status === "approved") outcomes.approved += 1;
-    else if (entry.status === "rejected") outcomes.rejected += 1;
-    else if (entry.status === "handled") outcomes.handled += 1;
-    else outcomes.pending += 1;
+    outcomes[outcome] += 1;
 
     if (validDate) {
       earliest = Math.min(earliest, received.getTime());
@@ -131,12 +158,21 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
           requests: 0,
           days: 0,
           byType: {},
+          outcomes: { approved: 0, rejected: 0, handled: 0, pending: 0 },
+          entries: [],
         };
         employees.set(employeeKey, person);
       }
       person.requests += 1;
       person.days += days;
+      person.outcomes[outcome] += 1;
       bump(person.byType, type, 1);
+      person.entries.push({
+        receivedAt: entry.receivedAt,
+        leaveType: type,
+        numberOfDays: days,
+        status: outcome,
+      });
     }
 
     let typeRow = types.get(type);
@@ -153,7 +189,13 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
     .map((slot) => slot.month);
 
   const byEmployee = [...employees.values()]
-    .map((person) => ({ ...person, days: round(person.days) }))
+    .map((person) => ({
+      ...person,
+      days: round(person.days),
+      entries: person.entries.sort(
+        (a, b) => receivedTime(b.receivedAt) - receivedTime(a.receivedAt)
+      ),
+    }))
     .sort((a, b) => b.days - a.days || b.requests - a.requests);
 
   const byType = [...types.values()]
