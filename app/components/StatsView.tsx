@@ -1,9 +1,14 @@
 "use client";
 
-import { useMemo } from "react";
-import type { StatsEmployee, StatsPayload } from "@/lib/stats";
+import { useId, useMemo, useState } from "react";
+import type {
+  StatsEmployee,
+  StatsEmployeeEntry,
+  StatsOutcome,
+  StatsPayload,
+} from "@/lib/stats";
 import { ArtTray, EmptyState } from "./States";
-import { IconAlert, IconRefresh } from "./icons";
+import { IconAlert, IconChevron, IconRefresh } from "./icons";
 import { avatarTone, initials, leaveTypeColor, leaveTypeShort } from "./utils";
 
 const OTHER = "Other";
@@ -40,6 +45,12 @@ function formatDay(iso: string) {
   });
 }
 
+function formatShortDay(iso: string) {
+  const d = new Date(iso);
+  if (!iso || Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+}
+
 function formatNumber(n: number) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
@@ -58,7 +69,7 @@ function breakdown(byType: Record<string, number>) {
 }
 
 const OUTCOMES: {
-  key: keyof StatsEmployee["outcomes"];
+  key: StatsOutcome;
   label: string;
   lamp: string;
   tone: string;
@@ -89,14 +100,22 @@ const OUTCOMES: {
   },
 ];
 
+const OUTCOME_BY_KEY = OUTCOMES.reduce(
+  (map, o) => {
+    map[o.key] = o;
+    return map;
+  },
+  {} as Record<StatsOutcome, (typeof OUTCOMES)[number]>
+);
+
 function OutcomeChips({ person }: { person: StatsEmployee }) {
   const shown = OUTCOMES.filter((o) => person.outcomes[o.key] > 0);
   if (shown.length === 0) return null;
 
   return (
-    <ul className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+    <span className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
       {shown.map((o) => (
-        <li
+        <span
           key={o.key}
           title={`${person.outcomes[o.key]} ${o.label}`}
           className={`flex items-center gap-1.5 text-[11px] ${o.tone}`}
@@ -109,9 +128,68 @@ function OutcomeChips({ person }: { person: StatsEmployee }) {
             {person.outcomes[o.key]}
           </span>
           <span className="sr-only sm:not-sr-only">{o.label}</span>
-        </li>
+        </span>
       ))}
-    </ul>
+    </span>
+  );
+}
+
+function EntryList({
+  id,
+  entries,
+  typeIndex,
+}: {
+  id: string;
+  entries: StatsEmployeeEntry[];
+  typeIndex: Map<string, number>;
+}) {
+  if (entries.length === 0) return null;
+
+  return (
+    <div id={id} className="rise-in pb-4 pl-8 sm:pl-[88px]">
+      <ul className="divide-y divide-[var(--border)] border-l border-[var(--border)] pl-3 sm:pl-4">
+        {entries.map((entry, i) => {
+          const color = leaveTypeColor(
+            entry.leaveType,
+            typeIndex.get(entry.leaveType) ?? i
+          );
+          const outcome = OUTCOME_BY_KEY[entry.status];
+          return (
+            <li
+              key={`${entry.receivedAt}-${i}`}
+              className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5 text-[13px]"
+            >
+              <span className="w-14 shrink-0 font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
+                {formatShortDay(entry.receivedAt)}
+              </span>
+              <span
+                title={entry.leaveType}
+                className="shrink-0 rounded-[3px] border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide"
+                style={{
+                  color,
+                  borderColor: `color-mix(in srgb, ${color} 35%, transparent)`,
+                  background: `color-mix(in srgb, ${color} 10%, transparent)`,
+                }}
+              >
+                {leaveTypeShort(entry.leaveType)}
+              </span>
+              <span className="shrink-0 font-mono text-[12px] tabular-nums text-[var(--text-secondary)]">
+                {formatNumber(entry.numberOfDays)}d
+              </span>
+              <span
+                className={`ml-auto flex shrink-0 items-center gap-1.5 text-[12px] ${outcome.tone}`}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`lamp-dot h-[5px] w-[5px] shrink-0 ${outcome.lamp}`}
+                />
+                {outcome.label}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
@@ -243,6 +321,13 @@ function MonthlyPattern({ data }: { data: StatsPayload }) {
 }
 
 function TopTakers({ data }: { data: StatsPayload }) {
+  const uid = useId();
+  const [open, setOpen] = useState<string | null>(null);
+  const typeIndex = useMemo(
+    () => new Map(data.byType.map((t, i) => [t.type, i] as const)),
+    [data]
+  );
+
   const people = data.byEmployee.slice(0, TOP_PEOPLE);
   if (people.length === 0) return null;
   const max = people.reduce((peak, p) => Math.max(peak, p.days), 0);
@@ -257,55 +342,78 @@ function TopTakers({ data }: { data: StatsPayload }) {
       </div>
 
       <ol className="mt-5 divide-y divide-[var(--border)] border-y border-[var(--border)]">
-        {people.map((person, i) => (
-          <li key={`${person.code}-${person.name}`}>
-            <div className="flex items-center gap-3 py-4 sm:gap-4">
-              <span className="w-5 shrink-0 font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
-                {String(i + 1).padStart(2, "0")}
-              </span>
-              <span
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold tracking-wide ${avatarTone(
-                  person.name
-                )}`}
+        {people.map((person, i) => {
+          const key = `${person.code}-${person.name}`;
+          const panelId = `${uid}-${i}`;
+          const isOpen = open === key;
+          return (
+            <li key={key}>
+              <button
+                type="button"
+                onClick={() => setOpen(isOpen ? null : key)}
+                aria-expanded={isOpen}
+                aria-controls={isOpen ? panelId : undefined}
+                className="press group flex w-full items-center gap-3 py-4 text-left sm:gap-4"
               >
-                {initials(person.name)}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-                  <h3 className="min-w-0 max-w-full truncate text-[14px] font-semibold tracking-tight text-[var(--text-primary)]">
-                    {person.name}
-                  </h3>
-                  <span className="min-w-0 truncate font-mono text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
-                    {person.code}
+                <span className="w-5 shrink-0 font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <span
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold tracking-wide ${avatarTone(
+                    person.name
+                  )}`}
+                >
+                  {initials(person.name)}
+                </span>
+                <span className="block min-w-0 flex-1">
+                  <span className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+                    <span className="min-w-0 max-w-full truncate text-[14px] font-semibold tracking-tight text-[var(--text-primary)]">
+                      {person.name}
+                    </span>
+                    <span className="min-w-0 truncate font-mono text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
+                      {person.code}
+                    </span>
                   </span>
-                </div>
-                <div className="mt-2 h-[3px] w-full max-w-md overflow-hidden rounded-full bg-[var(--surface-raised)]">
-                  <div
-                    className="h-full rounded-full bg-[var(--accent)]"
-                    style={{
-                      width: max > 0 ? `${(person.days / max) * 100}%` : "0%",
-                    }}
-                  />
-                </div>
-                <p className="mt-2 font-mono text-[11px] text-[var(--text-muted)]">
-                  {breakdown(person.byType) ||
-                    `${person.requests} ${
-                      person.requests === 1 ? "request" : "requests"
-                    }`}
-                </p>
-                <OutcomeChips person={person} />
-              </div>
-              <div className="shrink-0 text-right">
-                <p className="font-mono text-[24px] font-medium leading-none tracking-tight tabular-nums text-[var(--text-primary)] sm:text-[28px]">
-                  {formatNumber(person.days)}
-                </p>
-                <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">
-                  days
-                </p>
-              </div>
-            </div>
-          </li>
-        ))}
+                  <span className="mt-2 block h-[3px] w-full max-w-md overflow-hidden rounded-full bg-[var(--surface-raised)]">
+                    <span
+                      className="block h-full rounded-full bg-[var(--accent)]"
+                      style={{
+                        width: max > 0 ? `${(person.days / max) * 100}%` : "0%",
+                      }}
+                    />
+                  </span>
+                  <span className="mt-2 block font-mono text-[11px] text-[var(--text-muted)]">
+                    {breakdown(person.byType) ||
+                      `${person.requests} ${
+                        person.requests === 1 ? "request" : "requests"
+                      }`}
+                  </span>
+                  <OutcomeChips person={person} />
+                </span>
+                <span className="block shrink-0 text-right">
+                  <span className="block font-mono text-[24px] font-medium leading-none tracking-tight tabular-nums text-[var(--text-primary)] sm:text-[28px]">
+                    {formatNumber(person.days)}
+                  </span>
+                  <span className="mt-2 block text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">
+                    days
+                  </span>
+                </span>
+                <IconChevron
+                  className={`h-3.5 w-3.5 shrink-0 text-[var(--text-muted)] transition-transform duration-200 group-hover:text-[var(--text-secondary)] ${
+                    isOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+              {isOpen && (
+                <EntryList
+                  id={panelId}
+                  entries={person.entries}
+                  typeIndex={typeIndex}
+                />
+              )}
+            </li>
+          );
+        })}
       </ol>
     </section>
   );
