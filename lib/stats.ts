@@ -16,12 +16,20 @@ export interface StatsMonth {
   byType: Record<string, number>;
 }
 
+export interface StatsEmployeeOutcomes {
+  approved: number;
+  rejected: number;
+  handled: number;
+  pending: number;
+}
+
 export interface StatsEmployee {
   code: string;
   name: string;
   requests: number;
   days: number;
   byType: Record<string, number>;
+  outcomes: StatsEmployeeOutcomes;
 }
 
 export interface StatsType {
@@ -99,11 +107,15 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
     const received = new Date(entry.receivedAt);
     const validDate = !Number.isNaN(received.getTime());
 
+    const outcome: keyof StatsEmployeeOutcomes =
+      entry.status === "approved" ||
+      entry.status === "rejected" ||
+      entry.status === "handled"
+        ? entry.status
+        : "pending";
+
     outcomes.applied += 1;
-    if (entry.status === "approved") outcomes.approved += 1;
-    else if (entry.status === "rejected") outcomes.rejected += 1;
-    else if (entry.status === "handled") outcomes.handled += 1;
-    else outcomes.pending += 1;
+    outcomes[outcome] += 1;
 
     if (validDate) {
       earliest = Math.min(earliest, received.getTime());
@@ -131,11 +143,13 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
           requests: 0,
           days: 0,
           byType: {},
+          outcomes: { approved: 0, rejected: 0, handled: 0, pending: 0 },
         };
         employees.set(employeeKey, person);
       }
       person.requests += 1;
       person.days += days;
+      person.outcomes[outcome] += 1;
       bump(person.byType, type, 1);
     }
 

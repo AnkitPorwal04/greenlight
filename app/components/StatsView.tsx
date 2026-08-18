@@ -1,9 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import type { StatsPayload } from "@/lib/stats";
+import type { StatsEmployee, StatsPayload } from "@/lib/stats";
 import { ArtTray, EmptyState } from "./States";
-import { StatStrip } from "./StatTile";
 import { IconAlert, IconRefresh } from "./icons";
 import { avatarTone, initials, leaveTypeColor, leaveTypeShort } from "./utils";
 
@@ -45,6 +44,11 @@ function formatNumber(n: number) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
+function shortMonth(label: string) {
+  const [name, year] = label.split(" ");
+  return year ? `${name} ${year.slice(-2)}` : name;
+}
+
 function breakdown(byType: Record<string, number>) {
   return Object.entries(byType)
     .sort((a, b) => b[1] - a[1])
@@ -53,18 +57,78 @@ function breakdown(byType: Record<string, number>) {
     .join(" · ");
 }
 
+const OUTCOMES: {
+  key: keyof StatsEmployee["outcomes"];
+  label: string;
+  lamp: string;
+  tone: string;
+}[] = [
+  {
+    key: "approved",
+    label: "approved",
+    lamp: "lamp-green",
+    tone: "text-[var(--c-emerald)]",
+  },
+  {
+    key: "rejected",
+    label: "rejected",
+    lamp: "lamp-red",
+    tone: "text-[var(--c-rose)]",
+  },
+  {
+    key: "pending",
+    label: "pending",
+    lamp: "lamp-amber",
+    tone: "text-[var(--c-amber)]",
+  },
+  {
+    key: "handled",
+    label: "handled",
+    lamp: "",
+    tone: "text-[var(--text-muted)]",
+  },
+];
+
+function OutcomeChips({ person }: { person: StatsEmployee }) {
+  const shown = OUTCOMES.filter((o) => person.outcomes[o.key] > 0);
+  if (shown.length === 0) return null;
+
+  return (
+    <ul className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+      {shown.map((o) => (
+        <li
+          key={o.key}
+          title={`${person.outcomes[o.key]} ${o.label}`}
+          className={`flex items-center gap-1.5 text-[11px] ${o.tone}`}
+        >
+          <span
+            aria-hidden="true"
+            className={`lamp-dot h-[5px] w-[5px] shrink-0 ${o.lamp}`}
+          />
+          <span className="font-mono tabular-nums">
+            {person.outcomes[o.key]}
+          </span>
+          <span className="sr-only sm:not-sr-only">{o.label}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function Skeleton() {
   return (
     <div className="mt-10 space-y-12">
       <div className="space-y-4">
         <div className="skeleton h-3 w-32 rounded" />
-        <div className="flex items-end gap-3">
-          {[64, 96, 48, 128, 80, 112, 56, 104].map((h, i) => (
-            <div
-              key={i}
-              className="skeleton w-11 shrink-0 rounded-t-[3px] sm:w-12"
-              style={{ height: h }}
-            />
+        <div className="space-y-2.5">
+          {[64, 96, 48, 88, 72, 40].map((w, i) => (
+            <div key={i} className="flex items-center gap-3 sm:gap-4">
+              <div className="skeleton h-2.5 w-14 shrink-0 rounded" />
+              <div
+                className="skeleton h-[10px] rounded-[3px]"
+                style={{ width: `${w}%` }}
+              />
+            </div>
           ))}
         </div>
       </div>
@@ -136,49 +200,43 @@ function MonthlyPattern({ data }: { data: StatsPayload }) {
         ))}
       </div>
 
-      <div className="scrollbar-none mt-6 overflow-x-auto border-y border-[var(--border)] py-6">
-        <div className="flex min-w-max items-end gap-3 sm:gap-4">
-          {months.map((m) => (
-            <div key={m.month} className="w-11 shrink-0 sm:w-12">
+      <div className="mt-6 space-y-2.5 border-y border-[var(--border)] py-6">
+        {months.map((m) => (
+          <div
+            key={m.month}
+            className="flex items-center gap-3 sm:gap-4"
+            title={`${m.month} — ${m.total} ${
+              m.total === 1 ? "request" : "requests"
+            }`}
+          >
+            <span className="w-14 shrink-0 font-mono text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+              {shortMonth(m.month)}
+            </span>
+            <div className="h-[10px] min-w-0 flex-1 overflow-hidden rounded-[3px] bg-[var(--surface-raised)]">
               <div
-                className="flex h-[168px] flex-col justify-end"
-                title={`${m.month} — ${m.total} ${
-                  m.total === 1 ? "request" : "requests"
-                }`}
+                className="flex h-full overflow-hidden rounded-[3px] transition-[width] duration-500 ease-out"
+                style={{ width: max > 0 ? `${(m.total / max) * 100}%` : "0%" }}
               >
-                <span className="mb-2 block text-center font-mono text-[11px] tabular-nums text-[var(--text-secondary)]">
-                  {m.total}
-                </span>
-                <div
-                  className="flex w-full flex-col-reverse overflow-hidden rounded-t-[3px]"
-                  style={{
-                    height: max > 0 ? `${(m.total / max) * 100}%` : "0%",
-                  }}
-                >
-                  {m.counts.map((count, i) =>
-                    count > 0 ? (
-                      <div
-                        key={series[i]}
-                        title={`${series[i]} — ${count}`}
-                        style={{
-                          height: `${(count / m.total) * 100}%`,
-                          background: colorOf(series[i], i),
-                          minHeight: 2,
-                        }}
-                      />
-                    ) : null
-                  )}
-                </div>
+                {m.counts.map((count, i) =>
+                  count > 0 ? (
+                    <div
+                      key={series[i]}
+                      title={`${series[i]} — ${count}`}
+                      style={{
+                        width: `${(count / m.total) * 100}%`,
+                        background: colorOf(series[i], i),
+                        minWidth: 2,
+                      }}
+                    />
+                  ) : null
+                )}
               </div>
-              <p className="mt-3 text-center font-mono text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
-                {m.month.split(" ")[0]}
-                <span className="mt-0.5 block text-[9px] opacity-70">
-                  {m.month.split(" ")[1]?.slice(-2)}
-                </span>
-              </p>
             </div>
-          ))}
-        </div>
+            <span className="w-7 shrink-0 text-right font-mono text-[11px] tabular-nums text-[var(--text-secondary)]">
+              {m.total}
+            </span>
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -235,6 +293,7 @@ function TopTakers({ data }: { data: StatsPayload }) {
                       person.requests === 1 ? "request" : "requests"
                     }`}
                 </p>
+                <OutcomeChips person={person} />
               </div>
               <div className="shrink-0 text-right">
                 <p className="font-mono text-[24px] font-medium leading-none tracking-tight tabular-nums text-[var(--text-primary)] sm:text-[28px]">
@@ -345,36 +404,6 @@ export function StatsView({
             </div>
           ))}
         </dl>
-      </section>
-
-      <section className="mt-12">
-        <Label>Decision outcomes</Label>
-        <div className="mt-5 border-y border-[var(--border)] py-6">
-          <StatStrip
-            items={[
-              {
-                label: "Pending",
-                value: data.outcomes.pending,
-                tone: "amber",
-              },
-              {
-                label: "Approved",
-                value: data.outcomes.approved,
-                tone: "emerald",
-              },
-              {
-                label: "Rejected",
-                value: data.outcomes.rejected,
-                tone: "rose",
-              },
-              {
-                label: "Handled",
-                value: data.outcomes.handled,
-                tone: "neutral",
-              },
-            ]}
-          />
-        </div>
       </section>
 
       <MonthlyPattern data={data} />
