@@ -1,3 +1,5 @@
+import type { LeaveStatus } from "./types";
+
 export interface StatsEntry {
   id: string;
   employeeName: string;
@@ -5,6 +7,7 @@ export interface StatsEntry {
   leaveType: string;
   numberOfDays: number;
   receivedAt: string;
+  status?: LeaveStatus;
 }
 
 export interface StatsMonth {
@@ -27,9 +30,18 @@ export interface StatsType {
   days: number;
 }
 
+export interface StatsOutcomes {
+  applied: number;
+  approved: number;
+  rejected: number;
+  handled: number;
+  pending: number;
+}
+
 export interface StatsPayload {
   totalRequests: number;
   sinceDate: string;
+  outcomes: StatsOutcomes;
   byMonth: StatsMonth[];
   byEmployee: StatsEmployee[];
   byType: StatsType[];
@@ -72,6 +84,13 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
   const months = new Map<string, { label: string; month: StatsMonth }>();
   const employees = new Map<string, StatsEmployee>();
   const types = new Map<string, StatsType>();
+  const outcomes: StatsOutcomes = {
+    applied: 0,
+    approved: 0,
+    rejected: 0,
+    handled: 0,
+    pending: 0,
+  };
   let earliest = Number.POSITIVE_INFINITY;
 
   for (const entry of unique.values()) {
@@ -79,6 +98,12 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
     const days = safeDays(entry.numberOfDays);
     const received = new Date(entry.receivedAt);
     const validDate = !Number.isNaN(received.getTime());
+
+    outcomes.applied += 1;
+    if (entry.status === "approved") outcomes.approved += 1;
+    else if (entry.status === "rejected") outcomes.rejected += 1;
+    else if (entry.status === "handled") outcomes.handled += 1;
+    else outcomes.pending += 1;
 
     if (validDate) {
       earliest = Math.min(earliest, received.getTime());
@@ -140,6 +165,7 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
     sinceDate: Number.isFinite(earliest)
       ? new Date(earliest).toISOString()
       : "",
+    outcomes,
     byMonth,
     byEmployee,
     byType,

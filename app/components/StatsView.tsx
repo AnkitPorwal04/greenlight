@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import type { StatsPayload } from "@/lib/stats";
 import { ArtTray, EmptyState } from "./States";
+import { StatStrip } from "./StatTile";
 import { IconAlert, IconRefresh } from "./icons";
 import { avatarTone, initials, leaveTypeColor, leaveTypeShort } from "./utils";
 
@@ -326,7 +327,7 @@ export function StatsView({
       >
         <dl className="grid grid-cols-2 gap-x-4 gap-y-6 sm:-ml-10 sm:flex sm:flex-wrap sm:items-stretch sm:gap-0">
           {[
-            { label: "Requests", value: String(data.totalRequests) },
+            { label: "Applied", value: String(data.outcomes.applied) },
             { label: "People", value: String(data.byEmployee.length) },
             { label: "Leave types", value: String(data.byType.length) },
             { label: "Since", value: formatDay(data.sinceDate) },
@@ -344,6 +345,36 @@ export function StatsView({
             </div>
           ))}
         </dl>
+      </section>
+
+      <section className="mt-12">
+        <Label>Decision outcomes</Label>
+        <div className="mt-5 border-y border-[var(--border)] py-6">
+          <StatStrip
+            items={[
+              {
+                label: "Pending",
+                value: data.outcomes.pending,
+                tone: "amber",
+              },
+              {
+                label: "Approved",
+                value: data.outcomes.approved,
+                tone: "emerald",
+              },
+              {
+                label: "Rejected",
+                value: data.outcomes.rejected,
+                tone: "rose",
+              },
+              {
+                label: "Handled",
+                value: data.outcomes.handled,
+                tone: "neutral",
+              },
+            ]}
+          />
+        </div>
       </section>
 
       <MonthlyPattern data={data} />
