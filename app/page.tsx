@@ -6,7 +6,7 @@ import { DecisionModal } from "./components/DecisionModal";
 import { DirectoryModal } from "./components/DirectoryModal";
 import { EmailModal } from "./components/EmailModal";
 import { RequestRow } from "./components/RequestRow";
-import { Footer, Navbar } from "./components/Shell";
+import { Footer, MonthTabs, Navbar } from "./components/Shell";
 import { StatStrip } from "./components/StatTile";
 import { StatsView } from "./components/StatsView";
 import {
@@ -18,7 +18,7 @@ import {
   SkeletonList,
   Toast,
 } from "./components/States";
-import { IconAlert } from "./components/icons";
+import { IconAlert, IconRefresh } from "./components/icons";
 import {
   groupByDate,
   matchesQuery,
@@ -29,6 +29,7 @@ import {
   type View,
 } from "./components/utils";
 import { composeDecisionMail } from "@/lib/compose";
+import { buildHistoryMonths } from "@/lib/history";
 import type { StatsPayload } from "@/lib/stats";
 import type { LeaveRequest } from "@/lib/types";
 
@@ -39,7 +40,7 @@ const PAGE_COPY: Record<View, { title: string; subtitle: string }> = {
   },
   history: {
     title: "History",
-    subtitle: "Every request you have already actioned, newest first.",
+    subtitle: "Every request you have already actioned, month by month.",
   },
   stats: {
     title: "Stats",
@@ -49,7 +50,6 @@ const PAGE_COPY: Record<View, { title: string; subtitle: string }> = {
 
 const EXIT_MS = 250;
 const PULSE_MS = 220;
-const HISTORY_LIMIT = 50;
 const NO_REQUESTS: LeaveRequest[] = [];
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -78,8 +78,17 @@ export default function Home() {
   const [statsData, setStatsData] = useState<StatsPayload | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
+  const [historyRequests, setHistoryRequests] = useState<LeaveRequest[] | null>(
+    null
+  );
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyCapped, setHistoryCapped] = useState(false);
+  const [monthKey, setMonthKey] = useState<string | null>(null);
   const loadIdRef = useRef(0);
   const statsLoadIdRef = useRef(0);
+  const historyLoadIdRef = useRef(0);
+  const historyLoadedRef = useRef(false);
   const keyboardNavRef = useRef(false);
 
   const loadStats = useCallback(async () => {
@@ -144,6 +153,40 @@ export default function Home() {
     }
   }, []);
 
+  const loadHistory = useCallback(async () => {
+    const loadId = historyLoadIdRef.current + 1;
+    historyLoadIdRef.current = loadId;
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const res = await fetch("/api/history");
+      const data = await res.json();
+      if (loadId !== historyLoadIdRef.current) return;
+      if (!res.ok) {
+        setHistoryError(
+          data.error === "not_connected"
+            ? "Gmail is not connected"
+            : (data.error ?? "Could not load history")
+        );
+        return;
+      }
+      historyLoadedRef.current = true;
+      setHistoryRequests(data.requests as LeaveRequest[]);
+      setHistoryCapped(Boolean(data.capped));
+    } catch {
+      if (loadId === historyLoadIdRef.current) {
+        setHistoryError("Could not reach the server");
+      }
+    } finally {
+      if (loadId === historyLoadIdRef.current) setHistoryLoading(false);
+    }
+  }, []);
+
+  const reload = useCallback(async () => {
+    await loadRequests();
+    if (historyLoadedRef.current) await loadHistory();
+  }, [loadHistory, loadRequests]);
+
   const releaseBusy = useCallback((ids: string[]) => {
     setBusyIds((prev) => prev.filter((id) => !ids.includes(id)));
   }, []);
@@ -185,11 +228,25 @@ export default function Home() {
         ),
     [requests]
   );
-  const history = useMemo(
-    () => decided.slice(0, HISTORY_LIMIT),
-    [decided]
+  const historyMonths = useMemo(
+    () =>
+      buildHistoryMonths(
+        (historyRequests ?? []).filter((r) => r.status !== "pending"),
+        new Date()
+      ),
+    [historyRequests]
   );
-  const historyTrimmed = decided.length > HISTORY_LIMIT;
+  const activeMonth =
+    historyMonths.find((m) => m.key === monthKey) ?? historyMonths[0];
+  const monthStats = useMemo(() => {
+    const items = activeMonth?.requests ?? NO_REQUESTS;
+    return {
+      total: items.length,
+      approved: items.filter((r) => r.status === "approved").length,
+      rejected: items.filter((r) => r.status === "rejected").length,
+      handled: items.filter((r) => r.status === "handled").length,
+    };
+  }, [activeMonth]);
   const stats = useMemo(
     () => ({
       pending: pending.length,
@@ -201,7 +258,11 @@ export default function Home() {
   );
 
   const visible =
-    view === "dashboard" ? pending : view === "history" ? history : NO_REQUESTS;
+    view === "dashboard"
+      ? pending
+      : view === "history"
+        ? (activeMonth?.requests ?? NO_REQUESTS)
+        : NO_REQUESTS;
   const filtered = useMemo(
     () => visible.filter((r) => matchesQuery(r, query)),
     [visible, query]
@@ -231,14 +292,14 @@ export default function Home() {
         });
         setExiting((prev) => [...new Set([...prev, ...ids])]);
         await wait(EXIT_MS);
-        await loadRequests();
+        await reload();
       } catch {
         setToast({ message: "Network error", tone: "error" });
       } finally {
         releaseBusy(ids);
       }
     },
-    [loadRequests, releaseBusy]
+    [reload, releaseBusy]
   );
 
   const undoDecision = useCallback(
@@ -257,14 +318,14 @@ export default function Home() {
         setToast({ message: "Moved back to pending", tone: "success" });
         setExiting((prev) => [...new Set([...prev, r.id])]);
         await wait(EXIT_MS);
-        await loadRequests();
+        await reload();
       } catch {
         setToast({ message: "Network error", tone: "error" });
       } finally {
         releaseBusy([r.id]);
       }
     },
-    [loadRequests, releaseBusy]
+    [reload, releaseBusy]
   );
 
   const markAllHandled = () => {
@@ -324,7 +385,7 @@ export default function Home() {
       await wait(PULSE_MS);
       setExiting((prev) => [...new Set([...prev, id])]);
       await wait(EXIT_MS);
-      await loadRequests();
+      await reload();
     } catch {
       setModal({ ...modal, sending: false, error: "Network error" });
     } finally {
@@ -346,6 +407,11 @@ export default function Home() {
       setRequests([]);
       setStatsData(null);
       setStatsError(null);
+      historyLoadedRef.current = false;
+      setHistoryRequests(null);
+      setHistoryError(null);
+      setHistoryCapped(false);
+      setMonthKey(null);
       setFetchError(null);
       setQuery("");
       setView("dashboard");
@@ -372,7 +438,11 @@ export default function Home() {
 
   const connected = auth?.connected === true;
   const copy = PAGE_COPY[view];
-  const showSkeleton = !auth || refreshing || (loading && requests.length === 0);
+  const showSkeleton =
+    !auth ||
+    (view === "history"
+      ? historyLoading && !historyRequests
+      : refreshing || (loading && requests.length === 0));
   const modalOpen = Boolean(
     modal || emailModal || showDirectory || confirmClearAll
   );
@@ -483,17 +553,24 @@ export default function Home() {
         view={view}
         onView={(next) => {
           setView(next);
-          if (next === "stats" && connected && !statsData && !statsLoading) {
-            loadStats();
+          if (!connected) return;
+          if (next === "stats" && !statsData && !statsLoading) loadStats();
+          if (next === "history" && !historyRequests && !historyLoading) {
+            loadHistory();
           }
         }}
         onDirectory={() => setShowDirectory(true)}
         pendingCount={stats.pending}
         auth={auth}
-        loading={loading || (view === "stats" && statsLoading)}
+        loading={
+          loading ||
+          (view === "stats" && statsLoading) ||
+          (view === "history" && historyLoading)
+        }
         onSync={() => {
           loadRequests({ skeleton: true });
           if (statsData || view === "stats") loadStats();
+          if (historyLoadedRef.current || view === "history") loadHistory();
         }}
         query={query}
         onQuery={setQuery}
@@ -543,39 +620,103 @@ export default function Home() {
               />
             ) : (
               <>
+                {view === "history" && (
+                  <MonthTabs
+                    months={historyMonths}
+                    active={activeMonth?.key ?? ""}
+                    onSelect={(key) => {
+                      setMonthKey(key);
+                      setSelectedId(null);
+                    }}
+                  />
+                )}
+
                 <section
                   aria-label="Overview"
                   className="border-y border-[var(--border)] py-5"
                 >
                   <StatStrip
                     loading={showSkeleton}
-                    items={[
-                      { label: "Pending", value: stats.pending, tone: "amber" },
-                      {
-                        label: "Approved",
-                        value: stats.approved,
-                        tone: "emerald",
-                      },
-                      { label: "Rejected", value: stats.rejected, tone: "rose" },
-                      {
-                        label: "Handled",
-                        value: stats.handled,
-                        tone: "neutral",
-                      },
-                    ]}
+                    items={
+                      view === "history"
+                        ? [
+                            {
+                              label: "Requests",
+                              value: monthStats.total,
+                              tone: "neutral",
+                            },
+                            {
+                              label: "Approved",
+                              value: monthStats.approved,
+                              tone: "emerald",
+                            },
+                            {
+                              label: "Rejected",
+                              value: monthStats.rejected,
+                              tone: "rose",
+                            },
+                            {
+                              label: "Handled",
+                              value: monthStats.handled,
+                              tone: "neutral",
+                            },
+                          ]
+                        : [
+                            {
+                              label: "Pending",
+                              value: stats.pending,
+                              tone: "amber",
+                            },
+                            {
+                              label: "Approved",
+                              value: stats.approved,
+                              tone: "emerald",
+                            },
+                            {
+                              label: "Rejected",
+                              value: stats.rejected,
+                              tone: "rose",
+                            },
+                            {
+                              label: "Handled",
+                              value: stats.handled,
+                              tone: "neutral",
+                            },
+                          ]
+                    }
                   />
                 </section>
 
-                {fetchError && (
+                {view === "dashboard" && fetchError && (
                   <p className="mt-6 flex items-start gap-2 border-l-2 border-[var(--signal-red)] py-1 pl-3 text-[13px] text-[var(--c-rose)]">
                     <IconAlert className="mt-0.5 h-4 w-4 shrink-0" />
                     {fetchError}
                   </p>
                 )}
 
+                {view === "history" && historyError && (
+                  <div className="mt-6">
+                    <p className="flex items-start gap-2 border-l-2 border-[var(--signal-red)] py-1 pl-3 text-[13px] text-[var(--c-rose)]">
+                      <IconAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                      {historyError}
+                    </p>
+                    <button
+                      onClick={loadHistory}
+                      className="press mt-5 inline-flex min-h-10 items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--surface-raised)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] hover:border-[var(--accent-ring)] hover:bg-[var(--accent-soft)] hover:text-[var(--text-primary)]"
+                    >
+                      <IconRefresh className="h-3.5 w-3.5" />
+                      Try again
+                    </button>
+                  </div>
+                )}
+
                 <div className="mt-10 flex items-baseline justify-between gap-3">
                   <h2 className="text-[10px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
-                    {view === "dashboard" ? "Awaiting decision" : "Decision log"}
+                    {view === "dashboard"
+                      ? "Awaiting decision"
+                      : activeMonth
+                        ? `Decision log · ${activeMonth.label}`
+                        : "Decision log"}
                   </h2>
                   <div className="flex items-center gap-4">
                     {view === "dashboard" && (
@@ -586,17 +727,11 @@ export default function Home() {
                         <kbd className="kbd">E</kbd>mail
                       </span>
                     )}
-                    {view === "dashboard" ? (
-                      <span className="font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
-                        {query.trim()
-                          ? `${filtered.length}/${visible.length}`
-                          : `${visible.length} ${visible.length === 1 ? "request" : "requests"}`}
-                      </span>
-                    ) : query.trim() ? (
-                      <span className="font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
-                        {`${filtered.length} ${filtered.length === 1 ? "match" : "matches"}`}
-                      </span>
-                    ) : null}
+                    <span className="font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
+                      {query.trim()
+                        ? `${filtered.length}/${visible.length}`
+                        : `${visible.length} ${visible.length === 1 ? "request" : "requests"}`}
+                    </span>
                   </div>
                 </div>
 
@@ -615,8 +750,12 @@ export default function Home() {
                     ) : (
                       <EmptyState
                         art={<ArtTray />}
-                        title="No decisions yet"
-                        hint="Approvals and rejections will show up here."
+                        title={
+                          activeMonth
+                            ? `Nothing actioned in ${activeMonth.label}`
+                            : "No decisions yet"
+                        }
+                        hint="Approvals and rejections for this month will show up here."
                       />
                     )
                   ) : (
@@ -664,11 +803,11 @@ export default function Home() {
                   )}
 
                   {view === "history" &&
-                    historyTrimmed &&
+                    historyCapped &&
                     !query.trim() &&
                     !showSkeleton && (
                       <p className="mt-8 border-t border-[var(--border)] pt-4 text-center font-mono text-[11px] text-[var(--text-muted)]">
-                        Showing the latest 50
+                        Showing the newest 500 mails in this window
                       </p>
                     )}
 
