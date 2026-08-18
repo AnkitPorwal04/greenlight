@@ -3,6 +3,7 @@ import type { gmail_v1 } from "@googleapis/gmail";
 import { getAuthorizedClient, getGmail } from "@/lib/google";
 import { getUserFromRequest } from "@/lib/session";
 import { parseLeaveMail } from "@/lib/parser";
+import { loadDecisions } from "@/lib/store";
 import { aggregateStats, type StatsEntry } from "@/lib/stats";
 
 export const dynamic = "force-dynamic";
@@ -35,13 +36,14 @@ export async function GET(req: NextRequest) {
 
   try {
     const gmail = getGmail(client);
-    const [profile, list] = await Promise.all([
+    const [profile, list, decisions] = await Promise.all([
       gmail.users.getProfile({ userId: "me" }),
       gmail.users.messages.list({
         userId: "me",
         q: `${SEARCH_QUERY} after:${process.env.STATS_SINCE ?? "2026/08/01"}`,
         maxResults: MAX_MESSAGES,
       }),
+      loadDecisions(user),
     ]);
 
     const selfEmail = profile.data.emailAddress ?? "";
@@ -70,13 +72,15 @@ export async function GET(req: NextRequest) {
       const receivedMs = msg.internalDate
         ? parseInt(msg.internalDate)
         : Date.now();
+      const id = msg.id ?? "";
       entries.push({
-        id: msg.id ?? "",
+        id,
         employeeName: parsed.employeeName,
         employeeCode: parsed.employeeCode,
         leaveType: parsed.leaveType,
         numberOfDays: parsed.numberOfDays,
         receivedAt: new Date(receivedMs).toISOString(),
+        status: decisions[id]?.status ?? "pending",
       });
     }
 
