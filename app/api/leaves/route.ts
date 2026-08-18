@@ -17,11 +17,17 @@ function fromHeader(msg: gmail_v1.Schema$Message): string {
 function threadHasMyReply(
   thread: gmail_v1.Schema$Thread,
   applicationMsgId: string,
-  selfEmail: string
+  selfEmail: string,
 ): boolean {
   const self = selfEmail.toLowerCase();
-  return (thread.messages ?? []).some(
-    (m) => m.id !== applicationMsgId && fromHeader(m).includes(self)
+  const msgs = thread.messages ?? [];
+  const app = msgs.find((m) => m.id === applicationMsgId);
+  const appTime = app?.internalDate ? parseInt(app.internalDate) : 0;
+  return msgs.some(
+    (m) =>
+      m.id !== applicationMsgId &&
+      fromHeader(m).includes(self) &&
+      (m.internalDate ? parseInt(m.internalDate) : 0) > appTime,
   );
 }
 
@@ -66,70 +72,77 @@ export async function GET(req: NextRequest) {
           userId: "me",
           id: tid,
           format: "full",
-        })
-      )
+        }),
+      ),
     );
 
     const wantedIds = new Set(ids.map((m) => m.id!));
     const requests: LeaveRequest[] = [];
     for (const res of threads) {
       const thread = res.data;
-      const msg = (thread.messages ?? []).find((m) => wantedIds.has(m.id!));
-      if (!msg) continue;
-      const parsed = parseLeaveMail(msg, selfEmail);
-      if (!parsed) continue;
+      const wanted = (thread.messages ?? []).filter((m) =>
+        wantedIds.has(m.id!),
+      );
+      for (const msg of wanted) {
+        const parsed = parseLeaveMail(msg, selfEmail);
+        if (!parsed) continue;
 
-      const directoryEntry = employees[parsed.employeeCode.toUpperCase()];
-      let decision = decisions[msg.id!];
+        const directoryEntry = employees[parsed.employeeCode.toUpperCase()];
+        let decision = decisions[msg.id!];
 
-      const autoAllowed = !noAuto.has(msg.id!);
+        const autoAllowed = !noAuto.has(msg.id!);
 
-      if (!decision && autoAllowed && threadHasMyReply(thread, msg.id!, selfEmail)) {
-        decision = {
-          status: "handled",
-          decidedAt: new Date().toISOString(),
-          note: "Auto-detected: you already replied in this Gmail thread",
-        };
-        await saveDecision(user, msg.id!, decision);
-      }
-
-      const receivedMs = msg.internalDate
-        ? parseInt(msg.internalDate)
-        : Date.now();
-      const employeeEmail = directoryEntry?.email ?? parsed.employeeEmail;
-
-      if (!decision && autoAllowed && employeeEmail) {
-        const sent = await gmail.users.messages.list({
-          userId: "me",
-          q: `in:sent to:${employeeEmail} after:${Math.floor(receivedMs / 1000)}`,
-          maxResults: 1,
-        });
-        if (sent.data.messages?.length) {
+        if (
+          !decision &&
+          autoAllowed &&
+          threadHasMyReply(thread, msg.id!, selfEmail)
+        ) {
           decision = {
             status: "handled",
             decidedAt: new Date().toISOString(),
-            note: `Auto-detected: you mailed ${employeeEmail} after this request`,
+            note: "Auto-detected: you already replied in this Gmail thread",
           };
           await saveDecision(user, msg.id!, decision);
         }
+
+        const receivedMs = msg.internalDate
+          ? parseInt(msg.internalDate)
+          : Date.now();
+        const employeeEmail = directoryEntry?.email ?? parsed.employeeEmail;
+
+        if (!decision && autoAllowed && employeeEmail) {
+          const sent = await gmail.users.messages.list({
+            userId: "me",
+            q: `in:sent to:${employeeEmail} after:${Math.floor(receivedMs / 1000)}`,
+            maxResults: 1,
+          });
+          if (sent.data.messages?.length) {
+            decision = {
+              status: "handled",
+              decidedAt: new Date().toISOString(),
+              note: `Auto-detected: you mailed ${employeeEmail} after this request`,
+            };
+            await saveDecision(user, msg.id!, decision);
+          }
+        }
+        requests.push({
+          id: msg.id!,
+          threadId: msg.threadId ?? "",
+          ...parsed,
+          employeeEmail,
+          emailVerified: Boolean(directoryEntry),
+          bodyText: extractBodyText(msg),
+          receivedAt: new Date(receivedMs).toISOString(),
+          status: decision?.status ?? "pending",
+          decidedAt: decision?.decidedAt,
+          decisionNote: decision?.note,
+        });
       }
-      requests.push({
-        id: msg.id!,
-        threadId: msg.threadId ?? "",
-        ...parsed,
-        employeeEmail,
-        emailVerified: Boolean(directoryEntry),
-        bodyText: extractBodyText(msg),
-        receivedAt: new Date(receivedMs).toISOString(),
-        status: decision?.status ?? "pending",
-        decidedAt: decision?.decidedAt,
-        decisionNote: decision?.note,
-      });
     }
 
     requests.sort(
       (a, b) =>
-        new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime()
+        new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime(),
     );
 
     // The Gmail search is capped at 50; a nextPageToken means older matching
@@ -143,7 +156,7 @@ export async function GET(req: NextRequest) {
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "gmail_error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
