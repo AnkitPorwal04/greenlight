@@ -198,12 +198,12 @@ function Skeleton() {
     <div className="mt-10 space-y-12">
       <div className="space-y-4">
         <div className="skeleton h-3 w-32 rounded" />
-        <div className="space-y-2.5">
-          {[64, 96, 48, 88, 72, 40].map((w, i) => (
+        <div className="space-y-3">
+          {[96, 62, 38].map((w, i) => (
             <div key={i} className="flex items-center gap-3 sm:gap-4">
               <div className="skeleton h-2.5 w-14 shrink-0 rounded" />
               <div
-                className="skeleton h-[10px] rounded-[3px]"
+                className="skeleton h-7 rounded-full"
                 style={{ width: `${w}%` }}
               />
             </div>
@@ -232,7 +232,9 @@ function Skeleton() {
 function MonthlyPattern({ data }: { data: StatsPayload }) {
   const { months, series, max } = useMemo(() => {
     const top = data.byType.slice(0, TOP_TYPES).map((t) => t.type);
-    const visible = data.byMonth.slice(-MAX_MONTHS);
+    const visible = data.byMonth
+      .filter((m) => m.total > 0)
+      .slice(-MAX_MONTHS);
     const hasOther = data.byType.length > top.length;
     const stack = hasOther ? [...top, OTHER] : top;
     const rows = visible.map((m) => {
@@ -262,7 +264,7 @@ function MonthlyPattern({ data }: { data: StatsPayload }) {
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
         <Label>Monthly pattern</Label>
         <span className="font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
-          last {months.length} {months.length === 1 ? "month" : "months"}
+          {months.length} {months.length === 1 ? "month" : "months"}
         </span>
       </div>
 
@@ -278,7 +280,7 @@ function MonthlyPattern({ data }: { data: StatsPayload }) {
         ))}
       </div>
 
-      <div className="mt-6 space-y-2.5 border-y border-[var(--border)] py-6">
+      <div className="mt-6 space-y-3 border-y border-[var(--border)] py-6">
         {months.map((m) => (
           <div
             key={m.month}
@@ -287,12 +289,12 @@ function MonthlyPattern({ data }: { data: StatsPayload }) {
               m.total === 1 ? "request" : "requests"
             }`}
           >
-            <span className="w-14 shrink-0 font-mono text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+            <span className="w-14 shrink-0 font-mono text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
               {shortMonth(m.month)}
             </span>
-            <div className="h-[10px] min-w-0 flex-1 overflow-hidden rounded-[3px] bg-[var(--surface-raised)]">
+            <div className="h-7 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--surface-raised)]">
               <div
-                className="flex h-full overflow-hidden rounded-[3px] transition-[width] duration-500 ease-out"
+                className="flex h-full overflow-hidden rounded-full transition-[width] duration-500 ease-out"
                 style={{ width: max > 0 ? `${(m.total / max) * 100}%` : "0%" }}
               >
                 {m.counts.map((count, i) =>
@@ -303,14 +305,14 @@ function MonthlyPattern({ data }: { data: StatsPayload }) {
                       style={{
                         width: `${(count / m.total) * 100}%`,
                         background: colorOf(series[i], i),
-                        minWidth: 2,
+                        minWidth: 4,
                       }}
                     />
                   ) : null
                 )}
               </div>
             </div>
-            <span className="w-7 shrink-0 text-right font-mono text-[11px] tabular-nums text-[var(--text-secondary)]">
+            <span className="w-8 shrink-0 text-right font-mono text-[13px] tabular-nums text-[var(--text-primary)]">
               {m.total}
             </span>
           </div>
