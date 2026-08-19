@@ -10,6 +10,13 @@ export interface HistoryMonth {
   requests: LeaveRequest[];
 }
 
+export interface MonthTotals {
+  total: number;
+  approved: number;
+  rejected: number;
+  handled: number;
+}
+
 export function monthKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
@@ -45,6 +52,35 @@ export function monthLabel(date: Date, now: Date): string {
 function receivedTime(value: string): number {
   const ts = new Date(value).getTime();
   return Number.isNaN(ts) ? 0 : ts;
+}
+
+export function decidedInMonth(
+  requests: LeaveRequest[],
+  key: string
+): LeaveRequest[] {
+  return requests.filter((request) => {
+    if (request.status === "pending") return false;
+    const received = new Date(request.receivedAt);
+    if (Number.isNaN(received.getTime())) return false;
+    return monthKey(received) === key;
+  });
+}
+
+export function monthTotals(requests: LeaveRequest[]): MonthTotals {
+  const totals: MonthTotals = {
+    total: 0,
+    approved: 0,
+    rejected: 0,
+    handled: 0,
+  };
+  for (const request of requests) {
+    if (request.status === "approved") totals.approved += 1;
+    else if (request.status === "rejected") totals.rejected += 1;
+    else if (request.status === "handled") totals.handled += 1;
+    else continue;
+    totals.total += 1;
+  }
+  return totals;
 }
 
 export function buildHistoryMonths(

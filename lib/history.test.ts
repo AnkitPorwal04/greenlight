@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   buildHistoryMonths,
+  decidedInMonth,
   gmailAfterDate,
   historyMonthCount,
   monthStart,
+  monthTotals,
 } from "./history";
 import type { LeaveRequest } from "./types";
 
@@ -74,6 +76,93 @@ describe("buildHistoryMonths", () => {
     );
 
     expect(months.every((m) => m.count === 0)).toBe(true);
+  });
+});
+
+describe("decidedInMonth", () => {
+  const key = "2026-08";
+
+  it("keeps only actioned requests received in that month", () => {
+    const kept = decidedInMonth(
+      [
+        request({ id: "a", receivedAt: new Date(2026, 7, 1, 9).toISOString() }),
+        request({
+          id: "july",
+          receivedAt: new Date(2026, 6, 31, 23).toISOString(),
+        }),
+        request({
+          id: "sept",
+          receivedAt: new Date(2026, 8, 1, 0).toISOString(),
+        }),
+      ],
+      key
+    );
+
+    expect(kept.map((r) => r.id)).toEqual(["a"]);
+  });
+
+  it("drops pending requests and unusable dates", () => {
+    const kept = decidedInMonth(
+      [
+        request({
+          id: "pending",
+          status: "pending",
+          receivedAt: new Date(2026, 7, 4, 9).toISOString(),
+        }),
+        request({ id: "bad", receivedAt: "not-a-date" }),
+      ],
+      key
+    );
+
+    expect(kept).toEqual([]);
+  });
+
+  it("matches the month bucket the history tabs build", () => {
+    const requests = [
+      request({ id: "a", receivedAt: new Date(2026, 7, 2, 9).toISOString() }),
+      request({
+        id: "b",
+        status: "rejected",
+        receivedAt: new Date(2026, 7, 17, 9).toISOString(),
+      }),
+      request({ id: "c", receivedAt: new Date(2026, 6, 9, 9).toISOString() }),
+    ];
+    const months = buildHistoryMonths(
+      requests.filter((r) => r.status !== "pending"),
+      NOW
+    );
+
+    expect(monthTotals(decidedInMonth(requests, key))).toEqual(
+      monthTotals(months[0].requests)
+    );
+  });
+});
+
+describe("monthTotals", () => {
+  it("counts each outcome and totals only actioned requests", () => {
+    const totals = monthTotals([
+      request({ id: "a", status: "approved" }),
+      request({ id: "b", status: "approved" }),
+      request({ id: "c", status: "rejected" }),
+      request({ id: "d", status: "handled" }),
+      request({ id: "e", status: "pending" }),
+    ]);
+
+    expect(totals).toEqual({
+      total: 4,
+      approved: 2,
+      rejected: 1,
+      handled: 1,
+    });
+  });
+
+  it("returns zeroes for an empty month", () => {
+    expect(monthTotals([])).toEqual({
+      total: 0,
+      approved: 0,
+      rejected: 0,
+      handled: 0,
+    });
   });
 });
 

@@ -29,7 +29,13 @@ import {
   type View,
 } from "./components/utils";
 import { composeDecisionMail } from "@/lib/compose";
-import { buildHistoryMonths } from "@/lib/history";
+import {
+  buildHistoryMonths,
+  decidedInMonth,
+  monthKey,
+  monthLabel,
+  monthTotals,
+} from "@/lib/history";
 import type { StatsPayload } from "@/lib/stats";
 import type { LeaveRequest } from "@/lib/types";
 
@@ -84,7 +90,7 @@ export default function Home() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [historyCapped, setHistoryCapped] = useState(false);
-  const [monthKey, setMonthKey] = useState<string | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const loadIdRef = useRef(0);
   const statsLoadIdRef = useRef(0);
   const historyLoadIdRef = useRef(0);
@@ -237,24 +243,24 @@ export default function Home() {
     [historyRequests]
   );
   const activeMonth =
-    historyMonths.find((m) => m.key === monthKey) ?? historyMonths[0];
-  const monthStats = useMemo(() => {
-    const items = activeMonth?.requests ?? NO_REQUESTS;
-    return {
-      total: items.length,
-      approved: items.filter((r) => r.status === "approved").length,
-      rejected: items.filter((r) => r.status === "rejected").length,
-      handled: items.filter((r) => r.status === "handled").length,
-    };
-  }, [activeMonth]);
+    historyMonths.find((m) => m.key === selectedMonth) ?? historyMonths[0];
+  const monthStats = useMemo(
+    () => monthTotals(activeMonth?.requests ?? NO_REQUESTS),
+    [activeMonth]
+  );
+  const thisMonth = useMemo(() => {
+    const now = new Date();
+    return { key: monthKey(now), label: monthLabel(now, now) };
+  }, []);
+  const thisMonthDecided = useMemo(() => {
+    const fromHistory = historyRequests
+      ? historyMonths.find((m) => m.key === thisMonth.key)?.requests
+      : undefined;
+    return fromHistory ?? decidedInMonth(requests, thisMonth.key);
+  }, [historyMonths, historyRequests, requests, thisMonth.key]);
   const stats = useMemo(
-    () => ({
-      pending: pending.length,
-      approved: requests.filter((r) => r.status === "approved").length,
-      rejected: requests.filter((r) => r.status === "rejected").length,
-      handled: requests.filter((r) => r.status === "handled").length,
-    }),
-    [requests, pending]
+    () => ({ pending: pending.length, ...monthTotals(thisMonthDecided) }),
+    [pending, thisMonthDecided]
   );
 
   const visible =
@@ -411,7 +417,7 @@ export default function Home() {
       setHistoryRequests(null);
       setHistoryError(null);
       setHistoryCapped(false);
-      setMonthKey(null);
+      setSelectedMonth(null);
       setFetchError(null);
       setQuery("");
       setView("dashboard");
@@ -625,7 +631,7 @@ export default function Home() {
                     months={historyMonths}
                     active={activeMonth?.key ?? ""}
                     onSelect={(key) => {
-                      setMonthKey(key);
+                      setSelectedMonth(key);
                       setSelectedId(null);
                     }}
                   />
@@ -635,6 +641,12 @@ export default function Home() {
                   aria-label="Overview"
                   className="border-y border-[var(--border)] py-5"
                 >
+                  {view === "dashboard" && auth && (
+                    <p className="mb-4 text-[13px] text-[var(--text-muted)]">
+                      <span className="font-mono">{thisMonth.label}</span> so far
+                      · pending counts every open request
+                    </p>
+                  )}
                   <StatStrip
                     loading={showSkeleton}
                     items={
