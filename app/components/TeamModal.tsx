@@ -5,6 +5,7 @@ import {
   filterPeople,
   normalizeText,
   parseFilterTerms,
+  personCodes,
   type Person,
 } from "./team-filter";
 
@@ -85,9 +86,22 @@ export function TeamModal({
     });
   };
 
+  const shownCodes = useMemo(() => personCodes(filtered), [filtered]);
+  const isFiltered = terms.length > 0;
+  const shownSelectedCount = shownCodes.filter((code) =>
+    selected.has(code)
+  ).length;
+
   const selectAll = () =>
-    setSelected(new Set(discovered.map((p) => p.code.toUpperCase())));
-  const clearAll = () => setSelected(new Set());
+    setSelected((prev) => new Set([...prev, ...shownCodes]));
+
+  const clearAll = () =>
+    setSelected((prev) => {
+      if (!isFiltered) return new Set<string>();
+      const next = new Set(prev);
+      for (const code of shownCodes) next.delete(code);
+      return next;
+    });
 
   const applyPaste = () => {
     const emails = [
@@ -222,18 +236,18 @@ export function TeamModal({
         <div className="mb-2 flex items-center gap-3 text-[11px]">
           <button
             onClick={selectAll}
-            disabled={discovered.length === 0}
+            disabled={shownCodes.length === 0 || shownSelectedCount === shownCodes.length}
             className="font-medium text-[var(--text-secondary)] transition hover:text-[var(--accent)] disabled:opacity-40"
           >
-            Select all
+            {isFiltered ? `Select all ${shownCodes.length} shown` : "Select all"}
           </button>
           <span className="text-[var(--border-strong)]">·</span>
           <button
             onClick={clearAll}
-            disabled={selected.size === 0}
+            disabled={isFiltered ? shownSelectedCount === 0 : selected.size === 0}
             className="font-medium text-[var(--text-secondary)] transition hover:text-[var(--accent)] disabled:opacity-40"
           >
-            Clear
+            {isFiltered ? `Clear ${shownSelectedCount} shown` : "Clear"}
           </button>
         </div>
 

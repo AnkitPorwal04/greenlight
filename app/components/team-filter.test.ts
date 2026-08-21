@@ -4,6 +4,7 @@ import {
   matchesPerson,
   normalizeTerm,
   parseFilterTerms,
+  personCodes,
   type Person,
 } from "./team-filter";
 
@@ -115,5 +116,26 @@ describe("filterPeople", () => {
 
   it("drops terms that match nobody without dropping the rest", () => {
     expect(filterPeople(roster, "ghost@nowhere.io, priya")).toHaveLength(1);
+  });
+
+  it("gives select-all the shown rows only, never the whole roster", () => {
+    const shown = filterPeople(roster, "nitin@ethara.ai, priya@ethara.ai");
+    expect(personCodes(shown)).toEqual(["GRP1941", "GRP0500"]);
+    expect(personCodes(shown)).not.toContain("GRP1042");
+  });
+});
+
+describe("personCodes", () => {
+  it("uppercases and trims codes", () => {
+    expect(personCodes([{ code: " grp1 " }, { code: "GRP2" }])).toEqual([
+      "GRP1",
+      "GRP2",
+    ]);
+  });
+
+  it("skips people without a usable code", () => {
+    expect(personCodes([{ code: "" }, { name: "No Code" }, { code: "A1" }])).toEqual(
+      ["A1"]
+    );
   });
 });

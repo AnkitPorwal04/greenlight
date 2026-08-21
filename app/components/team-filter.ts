@@ -37,6 +37,12 @@ export function parseFilterTerms(query: string): string[] {
   ];
 }
 
+export function personCodes(people: PersonLike[]): string[] {
+  return people
+    .map((person) => normalizeText(person.code).toUpperCase())
+    .filter(Boolean);
+}
+
 export function filterPeople<T extends PersonLike>(
   people: T[],
   query: string
