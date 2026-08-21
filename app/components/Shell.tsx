@@ -5,6 +5,7 @@ import {
   IconGithub,
   IconLock,
   IconLogout,
+  IconMail,
   IconRefresh,
   IconSearch,
   IconUsers,
@@ -18,6 +19,7 @@ interface NavbarProps {
   view: View;
   onView: (v: View) => void;
   onDirectory: () => void;
+  onTeam: () => void;
   pendingCount: number;
   auth: AuthState | null;
   loading: boolean;
@@ -149,11 +151,13 @@ function SearchField({
 function AccountMenu({
   auth,
   onDirectory,
+  onTeam,
   onDisconnect,
   onLock,
 }: {
   auth: AuthState | null;
   onDirectory: () => void;
+  onTeam: () => void;
   onDisconnect: () => void;
   onLock: () => void;
 }) {
@@ -235,11 +239,22 @@ function AccountMenu({
                   role="menuitem"
                   onClick={() => {
                     setOpen(false);
-                    onDirectory();
+                    onTeam();
                   }}
                   className="press flex min-h-11 w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-[13px] text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
                 >
                   <IconUsers className="h-4 w-4 text-[var(--text-muted)]" />
+                  My team
+                </button>
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setOpen(false);
+                    onDirectory();
+                  }}
+                  className="press flex min-h-11 w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-[13px] text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
+                >
+                  <IconMail className="h-4 w-4 text-[var(--text-muted)]" />
                   Employee directory
                 </button>
                 <div className="my-1 h-px bg-[var(--border)]" />
@@ -289,6 +304,7 @@ export function Navbar({
   view,
   onView,
   onDirectory,
+  onTeam,
   pendingCount,
   auth,
   loading,
@@ -398,6 +414,7 @@ export function Navbar({
           <AccountMenu
             auth={auth}
             onDirectory={onDirectory}
+            onTeam={onTeam}
             onDisconnect={onDisconnect}
             onLock={onLock}
           />

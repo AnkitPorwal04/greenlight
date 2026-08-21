@@ -3,8 +3,9 @@ import type { gmail_v1 } from "@googleapis/gmail";
 import { getAuthorizedClient, getGmail } from "@/lib/google";
 import { getUserFromRequest } from "@/lib/session";
 import { parseLeaveMail } from "@/lib/parser";
-import { loadDecisions } from "@/lib/store";
+import { loadDecisions, loadTeam } from "@/lib/store";
 import { aggregateStats, type StatsEntry } from "@/lib/stats";
+import { filterByTeam } from "@/lib/team";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const gmail = getGmail(client);
-    const [profile, list, decisions] = await Promise.all([
+    const [profile, list, decisions, team] = await Promise.all([
       gmail.users.getProfile({ userId: "me" }),
       gmail.users.messages.list({
         userId: "me",
@@ -44,6 +45,7 @@ export async function GET(req: NextRequest) {
         maxResults: MAX_MESSAGES,
       }),
       loadDecisions(user),
+      loadTeam(user),
     ]);
 
     const selfEmail = profile.data.emailAddress ?? "";
@@ -84,7 +86,8 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    return NextResponse.json(aggregateStats(entries));
+    // Count only people on the manager's team (all, if no team is configured).
+    return NextResponse.json(aggregateStats(filterByTeam(entries, team)));
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "gmail_error" },
