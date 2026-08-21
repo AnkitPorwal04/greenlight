@@ -4,8 +4,7 @@ import { getAuthorizedClient, getGmail } from "@/lib/google";
 import { getUserFromRequest } from "@/lib/session";
 import { parseLeaveMail } from "@/lib/parser";
 import { loadDecisions, loadTeam } from "@/lib/store";
-import { aggregateStats, type StatsEntry } from "@/lib/stats";
-import { filterByTeam } from "@/lib/team";
+import { aggregateStatsForTeam, type StatsEntry } from "@/lib/stats";
 
 export const dynamic = "force-dynamic";
 
@@ -87,7 +86,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Count only people on the manager's team (all, if no team is configured).
-    return NextResponse.json(aggregateStats(filterByTeam(entries, team)));
+    return NextResponse.json(aggregateStatsForTeam(entries, team));
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "gmail_error" },

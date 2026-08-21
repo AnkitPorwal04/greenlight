@@ -1,4 +1,5 @@
 import type { LeaveStatus } from "./types";
+import { filterByTeam } from "./team";
 
 export interface StatsEntry {
   id: string;
@@ -95,6 +96,13 @@ function bump(bucket: Record<string, number>, key: string, by: number) {
 function receivedTime(value: string): number {
   const ts = new Date(value).getTime();
   return Number.isNaN(ts) ? 0 : ts;
+}
+
+export function aggregateStatsForTeam(
+  entries: StatsEntry[],
+  team: string[]
+): StatsPayload {
+  return aggregateStats(filterByTeam(entries, team));
 }
 
 export function aggregateStats(entries: StatsEntry[]): StatsPayload {
