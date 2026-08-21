@@ -4,7 +4,8 @@ import { getAuthorizedClient, getGmail } from "@/lib/google";
 import { getUserFromRequest } from "@/lib/session";
 import { parseLeaveMail } from "@/lib/parser";
 import { loadEmployees } from "@/lib/employees";
-import { loadTeam, saveTeam } from "@/lib/store";
+import { loadTeam, loadTeamName, saveTeam, saveTeamName } from "@/lib/store";
+import { managerDisplayName } from "@/lib/team-name";
 import { gmailAfterDate, monthStart } from "@/lib/history";
 
 export const dynamic = "force-dynamic";
@@ -51,7 +52,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const gmail = getGmail(client);
-    const [profile, list, team, employees] = await Promise.all([
+    const [profile, list, team, teamName, employees] = await Promise.all([
       gmail.users.getProfile({ userId: "me" }),
       gmail.users.messages.list({
         userId: "me",
@@ -59,6 +60,7 @@ export async function GET(req: NextRequest) {
         maxResults: MAX_MESSAGES,
       }),
       loadTeam(user),
+      loadTeamName(user),
       loadEmployees(),
     ]);
 
@@ -127,7 +129,12 @@ export async function GET(req: NextRequest) {
       a.name.localeCompare(b.name)
     );
 
-    return NextResponse.json({ team, discovered });
+    const manager = {
+      name: managerDisplayName(user, Object.values(employees)),
+      email: user,
+    };
+
+    return NextResponse.json({ team, teamName, discovered, manager });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "gmail_error" },
@@ -142,15 +149,24 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "not_connected" }, { status: 401 });
   }
 
-  let codes: string[];
+  let body: Record<string, unknown>;
   try {
-    const body = await req.json();
-    codes = Array.isArray(body.codes) ? body.codes : [];
+    const parsed = await req.json();
+    body = parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
 
-  await saveTeam(user, codes);
-  const saved = await loadTeam(user);
-  return NextResponse.json({ ok: true, count: saved.length });
+  if (Array.isArray(body.codes)) {
+    await saveTeam(user, body.codes as string[]);
+  }
+  if (typeof body.teamName === "string") {
+    await saveTeamName(user, body.teamName);
+  }
+
+  const [saved, teamName] = await Promise.all([
+    loadTeam(user),
+    loadTeamName(user),
+  ]);
+  return NextResponse.json({ ok: true, count: saved.length, teamName });
 }

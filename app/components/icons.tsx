@@ -112,6 +112,24 @@ export function IconUsers({ className }: IconProps) {
   );
 }
 
+export function IconPencil({ className }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={base(className)}
+      aria-hidden="true"
+    >
+      <path d="M15.6 4.9l3.5 3.5" />
+      <path d="M17.2 3.3a2 2 0 012.9 2.9L8.4 17.9l-4 1.1 1.1-4z" />
+    </svg>
+  );
+}
+
 export function IconMail({ className }: IconProps) {
   return (
     <svg

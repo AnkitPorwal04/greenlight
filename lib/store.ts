@@ -1,4 +1,5 @@
-import { getJSON, setJSON } from "./storage";
+import { delKey, getJSON, setJSON } from "./storage";
+import { normalizeTeamName } from "./team-name";
 import type { Decision } from "./types";
 
 function decisionsKey(email: string) {
@@ -11,6 +12,10 @@ function noAutoKey(email: string) {
 
 function teamKey(email: string) {
   return `team:${email.toLowerCase()}`;
+}
+
+function teamNameKey(email: string) {
+  return `teamname:${email.toLowerCase()}`;
 }
 
 // A manager's team is a per-user set of employee codes (uppercased). An empty
@@ -32,6 +37,23 @@ export async function saveTeam(email: string, codes: string[]): Promise<void> {
     ),
   ];
   await setJSON(teamKey(email), clean);
+}
+
+export async function loadTeamName(email: string): Promise<string | null> {
+  const stored = await getJSON<string>(teamNameKey(email));
+  return normalizeTeamName(stored) || null;
+}
+
+export async function saveTeamName(
+  email: string,
+  name: string
+): Promise<void> {
+  const clean = normalizeTeamName(name);
+  if (!clean) {
+    await delKey(teamNameKey(email));
+    return;
+  }
+  await setJSON(teamNameKey(email), clean);
 }
 
 export async function loadNoAuto(email: string): Promise<string[]> {
