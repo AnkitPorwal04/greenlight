@@ -25,3 +25,25 @@ export function matchesPerson(person: PersonLike, term: string): boolean {
     normalizeText(person.email).includes(needle)
   );
 }
+
+export function parseFilterTerms(query: string): string[] {
+  return [
+    ...new Set(
+      query
+        .split(/[\s,;|]+/)
+        .map((part) => normalizeTerm(part))
+        .filter(Boolean)
+    ),
+  ];
+}
+
+export function filterPeople<T extends PersonLike>(
+  people: T[],
+  query: string
+): T[] {
+  const terms = parseFilterTerms(query);
+  if (terms.length === 0) return people;
+  return people.filter((person) =>
+    terms.some((term) => matchesPerson(person, term))
+  );
+}

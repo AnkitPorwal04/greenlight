@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal, ModalFooter, ModalHeader } from "./Modal";
 import { IconAlert, IconCheckCircle, IconSearch } from "./icons";
-import { matchesPerson, normalizeText, type Person } from "./team-filter";
+import {
+  filterPeople,
+  normalizeText,
+  parseFilterTerms,
+  type Person,
+} from "./team-filter";
 
 export function TeamModal({
   onClose,
@@ -58,11 +63,10 @@ export function TeamModal({
     };
   }, []);
 
+  const terms = useMemo(() => parseFilterTerms(query), [query]);
+
   const filtered = useMemo(() => {
-    const q = query.trim();
-    const rows = q
-      ? discovered.filter((p) => matchesPerson(p, q))
-      : discovered;
+    const rows = filterPeople(discovered, query);
     // Float the people matched by the last paste to the top for easy review.
     return [...rows].sort((a, b) => {
       const am = matched.has(a.code.toUpperCase()) ? 0 : 1;
@@ -198,10 +202,17 @@ export function TeamModal({
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search name, code or email"
-              aria-label="Search people"
-              className="field w-full rounded-md py-2 pl-9 pr-3 text-[13px]"
+              placeholder="Search name, code or email — paste a list to filter many"
+              aria-label="Search people by name, code or email"
+              className={`field w-full rounded-md py-2 pl-9 text-[13px] ${
+                terms.length > 1 ? "pr-20" : "pr-3"
+              }`}
             />
+            {terms.length > 1 && (
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
+                {terms.length} filters
+              </span>
+            )}
           </div>
           <span className="shrink-0 font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
             {selected.size} selected
@@ -237,7 +248,9 @@ export function TeamModal({
             <p className="p-6 text-center text-[13px] text-[var(--text-muted)]">
               {discovered.length === 0
                 ? "No people found in your recent leave mails yet."
-                : "No one matches that search."}
+                : terms.length > 1
+                  ? "No one matches those filters."
+                  : "No one matches that search."}
             </p>
           ) : (
             <ul className="divide-y divide-[var(--border)]">
