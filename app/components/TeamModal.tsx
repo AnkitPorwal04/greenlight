@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal, ModalFooter, ModalHeader } from "./Modal";
 import { IconAlert, IconCheckCircle, IconSearch } from "./icons";
-
-interface Person {
-  code: string;
-  name: string;
-  email: string;
-}
+import {
+  filterPeople,
+  normalizeText,
+  parseFilterTerms,
+  personCodes,
+  type Person,
+} from "./team-filter";
 
 export function TeamModal({
   onClose,
@@ -63,16 +64,10 @@ export function TeamModal({
     };
   }, []);
 
+  const terms = useMemo(() => parseFilterTerms(query), [query]);
+
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const rows = q
-      ? discovered.filter(
-          (p) =>
-            p.name.toLowerCase().includes(q) ||
-            p.code.toLowerCase().includes(q) ||
-            p.email.toLowerCase().includes(q)
-        )
-      : discovered;
+    const rows = filterPeople(discovered, query);
     // Float the people matched by the last paste to the top for easy review.
     return [...rows].sort((a, b) => {
       const am = matched.has(a.code.toUpperCase()) ? 0 : 1;
@@ -91,9 +86,22 @@ export function TeamModal({
     });
   };
 
+  const shownCodes = useMemo(() => personCodes(filtered), [filtered]);
+  const isFiltered = terms.length > 0;
+  const shownSelectedCount = shownCodes.filter((code) =>
+    selected.has(code)
+  ).length;
+
   const selectAll = () =>
-    setSelected(new Set(discovered.map((p) => p.code.toUpperCase())));
-  const clearAll = () => setSelected(new Set());
+    setSelected((prev) => new Set([...prev, ...shownCodes]));
+
+  const clearAll = () =>
+    setSelected((prev) => {
+      if (!isFiltered) return new Set<string>();
+      const next = new Set(prev);
+      for (const code of shownCodes) next.delete(code);
+      return next;
+    });
 
   const applyPaste = () => {
     const emails = [
@@ -106,8 +114,8 @@ export function TeamModal({
     ];
     const byEmail = new Map(
       discovered
-        .filter((p) => p.email)
-        .map((p) => [p.email.toLowerCase(), p] as const)
+        .map((p) => [normalizeText(p.email), p] as const)
+        .filter(([email]) => email)
     );
     const hitCodes = new Set<string>();
     const misses: string[] = [];
@@ -208,10 +216,17 @@ export function TeamModal({
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search name, code or email"
-              aria-label="Search people"
-              className="field w-full rounded-md py-2 pl-9 pr-3 text-[13px]"
+              placeholder="Search name, code or email — paste a list to filter many"
+              aria-label="Search people by name, code or email"
+              className={`field w-full rounded-md py-2 pl-9 text-[13px] ${
+                terms.length > 1 ? "pr-20" : "pr-3"
+              }`}
             />
+            {terms.length > 1 && (
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
+                {terms.length} filters
+              </span>
+            )}
           </div>
           <span className="shrink-0 font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
             {selected.size} selected
@@ -221,18 +236,18 @@ export function TeamModal({
         <div className="mb-2 flex items-center gap-3 text-[11px]">
           <button
             onClick={selectAll}
-            disabled={discovered.length === 0}
+            disabled={shownCodes.length === 0 || shownSelectedCount === shownCodes.length}
             className="font-medium text-[var(--text-secondary)] transition hover:text-[var(--accent)] disabled:opacity-40"
           >
-            Select all
+            {isFiltered ? `Select all ${shownCodes.length} shown` : "Select all"}
           </button>
           <span className="text-[var(--border-strong)]">·</span>
           <button
             onClick={clearAll}
-            disabled={selected.size === 0}
+            disabled={isFiltered ? shownSelectedCount === 0 : selected.size === 0}
             className="font-medium text-[var(--text-secondary)] transition hover:text-[var(--accent)] disabled:opacity-40"
           >
-            Clear
+            {isFiltered ? `Clear ${shownSelectedCount} shown` : "Clear"}
           </button>
         </div>
 
@@ -247,7 +262,9 @@ export function TeamModal({
             <p className="p-6 text-center text-[13px] text-[var(--text-muted)]">
               {discovered.length === 0
                 ? "No people found in your recent leave mails yet."
-                : "No one matches that search."}
+                : terms.length > 1
+                  ? "No one matches those filters."
+                  : "No one matches that search."}
             </p>
           ) : (
             <ul className="divide-y divide-[var(--border)]">

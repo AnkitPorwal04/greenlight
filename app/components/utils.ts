@@ -4,6 +4,7 @@ export type AuthState = {
   connected: boolean;
   email?: string;
   hasTeam?: boolean;
+  teamCount?: number;
 };
 export type Action = "approved" | "rejected";
 export type View = "dashboard" | "history" | "stats";

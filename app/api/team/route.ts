@@ -24,6 +24,10 @@ interface DiscoveredPerson {
   email: string;
 }
 
+function text(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) {
@@ -94,8 +98,14 @@ export async function GET(req: NextRequest) {
     // for leave recently.
     const byCode = new Map<string, DiscoveredPerson>();
     for (const emp of Object.values(employees)) {
-      const code = emp.code?.toUpperCase();
-      if (code) byCode.set(code, { code, name: emp.name, email: emp.email });
+      const code = text(emp.code).toUpperCase();
+      if (code) {
+        byCode.set(code, {
+          code,
+          name: text(emp.name),
+          email: text(emp.email).toLowerCase(),
+        });
+      }
     }
 
     // Then add anyone who appears in your recent leave mails but is not yet in
@@ -107,8 +117,8 @@ export async function GET(req: NextRequest) {
       if (!byCode.has(code)) {
         byCode.set(code, {
           code,
-          name: parsed.employeeName,
-          email: parsed.employeeEmail,
+          name: text(parsed.employeeName),
+          email: text(parsed.employeeEmail).toLowerCase(),
         });
       }
     }

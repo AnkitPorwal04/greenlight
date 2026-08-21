@@ -18,10 +18,12 @@ export function Modal({
   children,
   onClose,
   dismissible = true,
+  size = "default",
 }: {
   children: ReactNode;
   onClose: () => void;
   dismissible?: boolean;
+  size?: "default" | "wide";
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -96,7 +98,9 @@ export function Modal({
         ref={panelRef}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className="rise-in panel flex max-h-[88dvh] w-full max-w-lg flex-col overflow-hidden rounded-xl shadow-2xl shadow-[var(--shadow)] outline-none sm:max-h-[85dvh]"
+        className={`rise-in panel flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-xl shadow-2xl shadow-[var(--shadow)] outline-none sm:max-h-[85dvh] ${
+          size === "wide" ? "max-w-2xl sm:max-h-[88dvh]" : "max-w-lg"
+        }`}
       >
         <ModalTitleContext.Provider value={titleId}>
           {children}

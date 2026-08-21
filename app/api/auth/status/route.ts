@@ -22,6 +22,7 @@ export async function GET(req: NextRequest) {
       connected: true,
       email: profile.data.emailAddress,
       hasTeam: team.length > 0,
+      teamCount: team.length,
     });
   } catch {
     return NextResponse.json({ connected: false });
