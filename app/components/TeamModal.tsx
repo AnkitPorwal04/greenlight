@@ -185,7 +185,8 @@ export function TeamModal({
                 {pasteDone && (
                   <span className="inline-flex items-center gap-1.5 text-[11px] text-[var(--c-emerald)]">
                     <IconCheckCircle className="h-3.5 w-3.5" />
-                    Selected {matched.size} matched
+                    Matched {matched.size}{" "}
+                    {matched.size === 1 ? "person" : "people"}
                   </span>
                 )}
               </div>
