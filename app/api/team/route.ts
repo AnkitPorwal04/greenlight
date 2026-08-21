@@ -70,9 +70,11 @@ export async function GET(req: NextRequest) {
     // Metadata-only fetch is enough to read the applicant's name/code (from the
     // subject) and the recipients (for a guessed email), and is far lighter than
     // pulling the full message body for every mail.
+    // Discovery is best-effort, so skip any single message that fails to fetch
+    // rather than failing the whole request.
     const messages: gmail_v1.Schema$Message[] = [];
     for (const batch of chunk(ids, BATCH_SIZE)) {
-      const fetched = await Promise.all(
+      const fetched = await Promise.allSettled(
         batch.map((id) =>
           gmail.users.messages.get({
             userId: "me",
@@ -82,7 +84,9 @@ export async function GET(req: NextRequest) {
           })
         )
       );
-      for (const res of fetched) messages.push(res.data);
+      for (const res of fetched) {
+        if (res.status === "fulfilled") messages.push(res.value.data);
+      }
     }
 
     const byCode = new Map<string, DiscoveredPerson>();
