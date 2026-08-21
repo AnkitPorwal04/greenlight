@@ -5,6 +5,7 @@ import { ConfirmModal } from "./components/ConfirmModal";
 import { DecisionModal } from "./components/DecisionModal";
 import { DirectoryModal } from "./components/DirectoryModal";
 import { TeamModal } from "./components/TeamModal";
+import { MyTeamDialog } from "./components/MyTeamDialog";
 import { EmailModal } from "./components/EmailModal";
 import { RequestRow } from "./components/RequestRow";
 import { Footer, MonthTabs, Navbar } from "./components/Shell";
@@ -240,6 +241,26 @@ export default function Home() {
       /* ignore */
     }
   }, []);
+
+  const handleTeamSaved = useCallback(
+    (count: number) => {
+      setShowTeam(false);
+      dismissTeamNudge();
+      setAuth((prev) =>
+        prev ? { ...prev, hasTeam: count > 0, teamCount: count } : prev
+      );
+      setToast({
+        message: count
+          ? `Team saved — showing your ${count} ${count === 1 ? "person" : "people"}`
+          : "Team cleared — showing everyone",
+        tone: "success",
+      });
+      loadRequests();
+      loadHistory();
+      loadStats();
+    },
+    [dismissTeamNudge, loadHistory, loadRequests, loadStats]
+  );
 
   const pending = useMemo(
     () => requests.filter((r) => r.status === "pending"),
@@ -913,25 +934,18 @@ export default function Home() {
         />
       )}
 
-      {showTeam && (
-        <TeamModal
-          onClose={() => setShowTeam(false)}
-          onSaved={(count) => {
-            setShowTeam(false);
-            dismissTeamNudge();
-            setAuth((prev) => (prev ? { ...prev, hasTeam: count > 0 } : prev));
-            setToast({
-              message: count
-                ? `Team saved — showing your ${count} ${count === 1 ? "person" : "people"}`
-                : "Team cleared — showing everyone",
-              tone: "success",
-            });
-            loadRequests();
-            loadHistory();
-            loadStats();
-          }}
-        />
-      )}
+      {showTeam &&
+        (auth?.hasTeam ? (
+          <MyTeamDialog
+            onClose={() => setShowTeam(false)}
+            onSaved={handleTeamSaved}
+          />
+        ) : (
+          <TeamModal
+            onClose={() => setShowTeam(false)}
+            onSaved={handleTeamSaved}
+          />
+        ))}
 
       {confirmClearAll && (
         <ConfirmModal

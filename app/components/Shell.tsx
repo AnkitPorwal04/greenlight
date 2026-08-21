@@ -74,6 +74,34 @@ function Tab({
   );
 }
 
+function TeamButton({
+  count,
+  onClick,
+}: {
+  count?: number;
+  onClick: () => void;
+}) {
+  const sized = typeof count === "number" && count > 0;
+  return (
+    <button
+      onClick={onClick}
+      data-tip={sized ? "Manage your team" : "Set up your team"}
+      aria-label={
+        sized ? `My team — ${count} members` : "Set up my team"
+      }
+      className="tip press flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
+    >
+      <span
+        className={`lamp-dot h-1.5 w-1.5 shrink-0 ${sized ? "lamp-green" : ""}`}
+      />
+      Team
+      {sized && (
+        <span className="font-mono text-[11px] tabular-nums">{count}</span>
+      )}
+    </button>
+  );
+}
+
 export function MonthTabs({
   months,
   active,
@@ -364,6 +392,7 @@ export function Navbar({
             disabled={!connected}
             onClick={() => onView("stats")}
           />
+          {connected && <TeamButton count={auth?.teamCount} onClick={onTeam} />}
         </nav>
 
         <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-2.5">
@@ -453,6 +482,9 @@ export function Navbar({
                 disabled={!connected}
                 onClick={() => onView("stats")}
               />
+              {connected && (
+                <TeamButton count={auth?.teamCount} onClick={onTeam} />
+              )}
             </>
           )}
         </div>
