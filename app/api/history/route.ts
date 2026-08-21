@@ -3,8 +3,9 @@ import type { gmail_v1 } from "@googleapis/gmail";
 import { getAuthorizedClient, getGmail } from "@/lib/google";
 import { getUserFromRequest } from "@/lib/session";
 import { parseLeaveMail, extractBodyText } from "@/lib/parser";
-import { loadDecisions } from "@/lib/store";
+import { loadDecisions, loadTeam } from "@/lib/store";
 import { loadEmployees } from "@/lib/employees";
+import { filterByTeam } from "@/lib/team";
 import { gmailAfterDate, historyMonthCount, monthStart } from "@/lib/history";
 import type { LeaveRequest } from "@/lib/types";
 
@@ -26,6 +27,9 @@ function chunk<T>(items: T[], size: number): T[][] {
 }
 
 export async function GET(req: NextRequest) {
+  const months = historyMonthCount(req.nextUrl.searchParams.get("months"));
+  const since = monthStart(new Date(), months - 1);
+
   const user = getUserFromRequest(req);
   if (!user) {
     return NextResponse.json({ error: "not_connected" }, { status: 401 });
@@ -36,12 +40,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "not_connected" }, { status: 401 });
   }
 
-  const months = historyMonthCount(req.nextUrl.searchParams.get("months"));
-  const since = monthStart(new Date(), months - 1);
-
   try {
     const gmail = getGmail(client);
-    const [profile, list, decisions, employees] = await Promise.all([
+    const [profile, list, decisions, employees, team] = await Promise.all([
       gmail.users.getProfile({ userId: "me" }),
       gmail.users.messages.list({
         userId: "me",
@@ -50,6 +51,7 @@ export async function GET(req: NextRequest) {
       }),
       loadDecisions(user),
       loadEmployees(),
+      loadTeam(user),
     ]);
 
     const selfEmail = profile.data.emailAddress ?? "";
@@ -97,13 +99,15 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    requests.sort(
+    // Show only people on the manager's team (all, if no team is configured).
+    const visible = filterByTeam(requests, team);
+    visible.sort(
       (a, b) =>
         new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime()
     );
 
     return NextResponse.json({
-      requests,
+      requests: visible,
       selfEmail,
       months,
       since: since.toISOString(),

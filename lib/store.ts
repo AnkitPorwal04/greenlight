@@ -9,6 +9,31 @@ function noAutoKey(email: string) {
   return `noauto:${email.toLowerCase()}`;
 }
 
+function teamKey(email: string) {
+  return `team:${email.toLowerCase()}`;
+}
+
+// A manager's team is a per-user set of employee codes (uppercased). An empty
+// list means "no team configured yet" — callers then show everyone, so the
+// feature stays backward compatible until it is set up.
+export async function loadTeam(email: string): Promise<string[]> {
+  const list = await getJSON<string[]>(teamKey(email));
+  return Array.isArray(list)
+    ? list.map((c) => String(c).trim().toUpperCase()).filter(Boolean)
+    : [];
+}
+
+export async function saveTeam(email: string, codes: string[]): Promise<void> {
+  const clean = [
+    ...new Set(
+      (Array.isArray(codes) ? codes : [])
+        .map((c) => String(c).trim().toUpperCase())
+        .filter(Boolean)
+    ),
+  ];
+  await setJSON(teamKey(email), clean);
+}
+
 export async function loadNoAuto(email: string): Promise<string[]> {
   const list = await getJSON<string[]>(noAutoKey(email));
   return Array.isArray(list) ? list : [];

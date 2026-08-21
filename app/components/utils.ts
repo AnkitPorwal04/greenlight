@@ -1,6 +1,10 @@
 import type { LeaveRequest } from "@/lib/types";
 
-export type AuthState = { connected: boolean; email?: string };
+export type AuthState = {
+  connected: boolean;
+  email?: string;
+  hasTeam?: boolean;
+};
 export type Action = "approved" | "rejected";
 export type View = "dashboard" | "history" | "stats";
 export type ToastTone = "success" | "error";

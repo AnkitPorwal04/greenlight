@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthorizedClient, getGmail, clearTokens } from "@/lib/google";
 import { getUserFromRequest, clearUserCookie } from "@/lib/session";
+import { loadTeam } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -13,10 +14,14 @@ export async function GET(req: NextRequest) {
 
   try {
     const gmail = getGmail(client);
-    const profile = await gmail.users.getProfile({ userId: "me" });
+    const [profile, team] = await Promise.all([
+      gmail.users.getProfile({ userId: "me" }),
+      loadTeam(email),
+    ]);
     return NextResponse.json({
       connected: true,
       email: profile.data.emailAddress,
+      hasTeam: team.length > 0,
     });
   } catch {
     return NextResponse.json({ connected: false });

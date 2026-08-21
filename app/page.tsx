@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { DecisionModal } from "./components/DecisionModal";
 import { DirectoryModal } from "./components/DirectoryModal";
+import { TeamModal } from "./components/TeamModal";
 import { EmailModal } from "./components/EmailModal";
 import { RequestRow } from "./components/RequestRow";
 import { Footer, MonthTabs, Navbar } from "./components/Shell";
@@ -71,6 +72,15 @@ export default function Home() {
   const [toast, setToast] = useState<ToastState | null>(null);
   const [view, setView] = useState<View>("dashboard");
   const [showDirectory, setShowDirectory] = useState(false);
+  const [showTeam, setShowTeam] = useState(false);
+  const [teamNudgeDismissed, setTeamNudgeDismissed] = useState(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      return localStorage.getItem("gl_team_nudge_dismissed") === "1";
+    } catch {
+      return true;
+    }
+  });
   const [confirmClearAll, setConfirmClearAll] = useState(false);
   const [capped, setCapped] = useState(false);
   const [query, setQuery] = useState("");
@@ -219,6 +229,17 @@ export default function Home() {
     const t = setTimeout(() => setToast(null), 4000);
     return () => clearTimeout(t);
   }, [toast]);
+
+  // The "set up your team" nudge is a one-time prompt, dismissed for good once
+  // the manager closes it or sets a team.
+  const dismissTeamNudge = useCallback(() => {
+    setTeamNudgeDismissed(true);
+    try {
+      localStorage.setItem("gl_team_nudge_dismissed", "1");
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const pending = useMemo(
     () => requests.filter((r) => r.status === "pending"),
@@ -450,7 +471,7 @@ export default function Home() {
       ? historyLoading && !historyRequests
       : refreshing || (loading && requests.length === 0));
   const modalOpen = Boolean(
-    modal || emailModal || showDirectory || confirmClearAll
+    modal || emailModal || showDirectory || showTeam || confirmClearAll
   );
 
   const focusSearch = useCallback(() => {
@@ -566,6 +587,7 @@ export default function Home() {
           }
         }}
         onDirectory={() => setShowDirectory(true)}
+        onTeam={() => setShowTeam(true)}
         pendingCount={stats.pending}
         auth={auth}
         loading={
@@ -596,6 +618,29 @@ export default function Home() {
           <ConnectHero />
         ) : (
           <>
+            {connected && auth?.hasTeam === false && !teamNudgeDismissed && (
+              <div className="rise-in mb-6 flex flex-col gap-3 rounded-lg border border-[var(--accent-ring)] bg-[var(--accent-soft)] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-[13px] text-[var(--text-primary)]">
+                  Seeing people outside your team? Set up your team once to show
+                  only them across Dashboard, History and Stats.
+                </p>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    onClick={() => setShowTeam(true)}
+                    className="accent press min-h-9 rounded-md px-3 py-1.5 text-[12px] font-semibold"
+                  >
+                    Set up my team
+                  </button>
+                  <button
+                    onClick={dismissTeamNudge}
+                    className="press min-h-9 rounded-md px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  >
+                    Not now
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="mb-8 flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:gap-4">
               <div className="min-w-0">
                 <h1 className="text-[30px] font-semibold leading-none tracking-[-0.03em] text-[var(--text-primary)] sm:text-[42px]">
@@ -864,6 +909,26 @@ export default function Home() {
               tone: "success",
             });
             loadRequests();
+          }}
+        />
+      )}
+
+      {showTeam && (
+        <TeamModal
+          onClose={() => setShowTeam(false)}
+          onSaved={(count) => {
+            setShowTeam(false);
+            dismissTeamNudge();
+            setAuth((prev) => (prev ? { ...prev, hasTeam: count > 0 } : prev));
+            setToast({
+              message: count
+                ? `Team saved — showing your ${count} ${count === 1 ? "person" : "people"}`
+                : "Team cleared — showing everyone",
+              tone: "success",
+            });
+            loadRequests();
+            loadHistory();
+            loadStats();
           }}
         />
       )}

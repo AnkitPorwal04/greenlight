@@ -3,8 +3,9 @@ import type { gmail_v1 } from "@googleapis/gmail";
 import { getAuthorizedClient, getGmail } from "@/lib/google";
 import { getUserFromRequest } from "@/lib/session";
 import { parseLeaveMail, extractBodyText } from "@/lib/parser";
-import { loadDecisions, loadNoAuto, saveDecision } from "@/lib/store";
+import { loadDecisions, loadNoAuto, saveDecision, loadTeam } from "@/lib/store";
 import { loadEmployees } from "@/lib/employees";
+import { filterByTeam } from "@/lib/team";
 import type { LeaveRequest } from "@/lib/types";
 
 function fromHeader(msg: gmail_v1.Schema$Message): string {
@@ -50,17 +51,19 @@ export async function GET(req: NextRequest) {
 
   try {
     const gmail = getGmail(client);
-    const [profile, list, decisions, employees, undone] = await Promise.all([
-      gmail.users.getProfile({ userId: "me" }),
-      gmail.users.messages.list({
-        userId: "me",
-        q: SEARCH_QUERY,
-        maxResults: 50,
-      }),
-      loadDecisions(user),
-      loadEmployees(),
-      loadNoAuto(user),
-    ]);
+    const [profile, list, decisions, employees, undone, team] =
+      await Promise.all([
+        gmail.users.getProfile({ userId: "me" }),
+        gmail.users.messages.list({
+          userId: "me",
+          q: SEARCH_QUERY,
+          maxResults: 50,
+        }),
+        loadDecisions(user),
+        loadEmployees(),
+        loadNoAuto(user),
+        loadTeam(user),
+      ]);
     const noAuto = new Set(undone);
     const selfEmail = profile.data.emailAddress ?? "";
     const ids = list.data.messages ?? [];
@@ -140,7 +143,9 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    requests.sort(
+    // Show only people on the manager's team (all, if no team is configured).
+    const visible = filterByTeam(requests, team);
+    visible.sort(
       (a, b) =>
         new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime(),
     );
@@ -149,7 +154,7 @@ export async function GET(req: NextRequest) {
     // mails exist beyond what we fetched, so the UI can say so instead of
     // silently hiding them.
     return NextResponse.json({
-      requests,
+      requests: visible,
       selfEmail,
       capped: Boolean(list.data.nextPageToken),
     });
