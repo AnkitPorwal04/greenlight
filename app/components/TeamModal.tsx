@@ -1,12 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal, ModalFooter, ModalHeader } from "./Modal";
 import { IconAlert, IconCheckCircle, IconSearch } from "./icons";
-
-interface Person {
-  code: string;
-  name: string;
-  email: string;
-}
+import { matchesPerson, normalizeText, type Person } from "./team-filter";
 
 export function TeamModal({
   onClose,
@@ -64,14 +59,9 @@ export function TeamModal({
   }, []);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = query.trim();
     const rows = q
-      ? discovered.filter(
-          (p) =>
-            p.name.toLowerCase().includes(q) ||
-            p.code.toLowerCase().includes(q) ||
-            p.email.toLowerCase().includes(q)
-        )
+      ? discovered.filter((p) => matchesPerson(p, q))
       : discovered;
     // Float the people matched by the last paste to the top for easy review.
     return [...rows].sort((a, b) => {
@@ -106,8 +96,8 @@ export function TeamModal({
     ];
     const byEmail = new Map(
       discovered
-        .filter((p) => p.email)
-        .map((p) => [p.email.toLowerCase(), p] as const)
+        .map((p) => [normalizeText(p.email), p] as const)
+        .filter(([email]) => email)
     );
     const hitCodes = new Set<string>();
     const misses: string[] = [];
