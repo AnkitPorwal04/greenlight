@@ -89,7 +89,17 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Start from the whole saved directory (the authoritative roster), so
+    // everyone you loaded into it is selectable even if they have not applied
+    // for leave recently.
     const byCode = new Map<string, DiscoveredPerson>();
+    for (const emp of Object.values(employees)) {
+      const code = emp.code?.toUpperCase();
+      if (code) byCode.set(code, { code, name: emp.name, email: emp.email });
+    }
+
+    // Then add anyone who appears in your recent leave mails but is not yet in
+    // the directory, so nobody is missed.
     for (const msg of messages) {
       const parsed = parseLeaveMail(msg, selfEmail);
       if (!parsed || !parsed.employeeCode) continue;
@@ -98,7 +108,7 @@ export async function GET(req: NextRequest) {
         byCode.set(code, {
           code,
           name: parsed.employeeName,
-          email: employees[code]?.email ?? parsed.employeeEmail,
+          email: parsed.employeeEmail,
         });
       }
     }
