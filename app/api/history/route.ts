@@ -96,6 +96,7 @@ export async function GET(req: NextRequest) {
         status: decision?.status ?? "pending",
         decidedAt: decision?.decidedAt,
         decisionNote: decision?.note,
+        mailSent: Boolean(decision?.sentTo),
       });
     }
 

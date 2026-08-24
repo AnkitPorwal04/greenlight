@@ -74,6 +74,9 @@ export default function LoginPage() {
           <span className="lamp-dot lamp-green h-1.5 w-1.5" />
           Leave approvals, straight from your inbox
         </p>
+        <p className="mt-8 text-center font-mono text-[11px] text-[var(--text-muted)]">
+          Designed &amp; deployed by Archana and Ankit
+        </p>
       </form>
     </main>
   );

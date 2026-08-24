@@ -485,6 +485,9 @@ export function Footer() {
           </span>
         </div>
       </div>
+      <p className="-mt-2 px-4 pb-6 text-center font-mono text-[11px] text-[var(--text-muted)] sm:px-6 lg:px-10">
+        Designed &amp; deployed by Archana and Ankit
+      </p>
     </footer>
   );
 }
