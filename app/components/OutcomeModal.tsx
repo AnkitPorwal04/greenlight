@@ -21,6 +21,12 @@ const OPTIONS: {
     lamp: "lamp-red",
   },
   {
+    status: "withdrawn",
+    label: "Withdrawn by employee",
+    hint: "Pulled back in greytHR before a decision",
+    lamp: "lamp-hollow",
+  },
+  {
     status: "handled",
     label: "Handled by another team lead",
     hint: "Records this as handled",

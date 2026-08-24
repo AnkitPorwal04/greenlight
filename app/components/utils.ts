@@ -102,6 +102,7 @@ export function leaveTypeShort(type: string) {
 export function statusLabel(status: string) {
   if (status === "approved") return "Approved";
   if (status === "rejected") return "Rejected";
+  if (status === "withdrawn") return "Withdrawn";
   if (status === "handled") return "Handled";
   return "Pending";
 }

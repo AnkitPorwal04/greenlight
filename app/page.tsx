@@ -342,7 +342,10 @@ export default function Home() {
           message: recordedToast(status, ids.length),
           tone: "success",
         });
-        if (ids.length === 1 && status !== "handled") {
+        if (
+          ids.length === 1 &&
+          (status === "approved" || status === "rejected")
+        ) {
           setPulse({ id: ids[0], action: status });
           await wait(PULSE_MS);
         }
@@ -751,6 +754,15 @@ export default function Home() {
                               value: monthStats.handled,
                               tone: "neutral",
                             },
+                            ...(monthStats.withdrawn > 0
+                              ? [
+                                  {
+                                    label: "Withdrawn",
+                                    value: monthStats.withdrawn,
+                                    tone: "muted" as const,
+                                  },
+                                ]
+                              : []),
                           ]
                         : [
                             {
