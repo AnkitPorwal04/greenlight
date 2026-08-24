@@ -21,6 +21,7 @@ export interface LeaveRequest {
   status: LeaveStatus;
   decidedAt?: string;
   decisionNote?: string;
+  mailSent?: boolean;
 }
 
 export interface Decision {

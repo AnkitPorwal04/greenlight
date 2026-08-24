@@ -7,6 +7,7 @@ import { DirectoryModal } from "./components/DirectoryModal";
 import { TeamModal } from "./components/TeamModal";
 import { MyTeamDialog } from "./components/MyTeamDialog";
 import { EmailModal } from "./components/EmailModal";
+import { OutcomeModal } from "./components/OutcomeModal";
 import { RequestRow } from "./components/RequestRow";
 import { Footer, MonthTabs, Navbar } from "./components/Shell";
 import { StatStrip } from "./components/StatTile";
@@ -38,6 +39,7 @@ import {
   monthLabel,
   monthTotals,
 } from "@/lib/history";
+import { recordedToast, type RecordedStatus } from "@/lib/outcome";
 import type { StatsPayload } from "@/lib/stats";
 import type { LeaveRequest } from "@/lib/types";
 
@@ -70,6 +72,7 @@ export default function Home() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState | null>(null);
   const [emailModal, setEmailModal] = useState<LeaveRequest | null>(null);
+  const [outcomeFor, setOutcomeFor] = useState<LeaveRequest | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [view, setView] = useState<View>("dashboard");
   const [showDirectory, setShowDirectory] = useState(false);
@@ -317,27 +320,28 @@ export default function Home() {
   );
   const groups = useMemo(() => groupByDate(filtered), [filtered]);
 
-  const markHandled = useCallback(
-    async (ids: string[]) => {
+  const recordOutcome = useCallback(
+    async (ids: string[], status: RecordedStatus = "handled") => {
       if (ids.length === 0) return;
       setBusyIds((prev) => [...new Set([...prev, ...ids])]);
       try {
         const res = await fetch("/api/mark", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ids }),
+          body: JSON.stringify({ ids, status }),
         });
         if (!res.ok) {
-          setToast({ message: "Failed to mark as handled", tone: "error" });
+          setToast({ message: "Failed to record the outcome", tone: "error" });
           return;
         }
         setToast({
-          message:
-            ids.length === 1
-              ? "Marked as handled — no mail sent"
-              : `${ids.length} requests marked as handled`,
+          message: recordedToast(status, ids.length),
           tone: "success",
         });
+        if (ids.length === 1 && status !== "handled") {
+          setPulse({ id: ids[0], action: status });
+          await wait(PULSE_MS);
+        }
         setExiting((prev) => [...new Set([...prev, ...ids])]);
         await wait(EXIT_MS);
         await reload();
@@ -378,7 +382,7 @@ export default function Home() {
 
   const markAllHandled = () => {
     setConfirmClearAll(false);
-    markHandled(pending.map((r) => r.id));
+    recordOutcome(pending.map((r) => r.id));
   };
 
   const openDecision = useCallback((r: LeaveRequest, action: Action) => {
@@ -465,6 +469,7 @@ export default function Home() {
       setView("dashboard");
       setModal(null);
       setEmailModal(null);
+      setOutcomeFor(null);
       setShowDirectory(false);
       setToast({
         message: "Gmail disconnected — connect another account to continue",
@@ -492,7 +497,12 @@ export default function Home() {
       ? historyLoading && !historyRequests
       : refreshing || (loading && requests.length === 0));
   const modalOpen = Boolean(
-    modal || emailModal || showDirectory || showTeam || confirmClearAll
+    modal ||
+      emailModal ||
+      outcomeFor ||
+      showDirectory ||
+      showTeam ||
+      confirmClearAll
   );
 
   const focusSearch = useCallback(() => {
@@ -570,7 +580,7 @@ export default function Home() {
       e.preventDefault();
       if (key === "a") openDecision(row, "approved");
       else if (key === "r") openDecision(row, "rejected");
-      else markHandled([row.id]);
+      else setOutcomeFor(row);
     };
 
     window.addEventListener("keydown", onKeyDown);
@@ -580,7 +590,6 @@ export default function Home() {
     connected,
     filtered,
     focusSearch,
-    markHandled,
     modalOpen,
     openDecision,
     selectedId,
@@ -869,7 +878,7 @@ export default function Home() {
                                   setSelectedId(r.id);
                                 }}
                                 onDecide={(action) => openDecision(r, action)}
-                                onMark={() => markHandled([r.id])}
+                                onMark={() => setOutcomeFor(r)}
                                 onUndo={() => undoDecision(r)}
                                 onViewEmail={() => setEmailModal(r)}
                               />
@@ -918,6 +927,19 @@ export default function Home() {
 
       {emailModal && (
         <EmailModal request={emailModal} onClose={() => setEmailModal(null)} />
+      )}
+
+      {outcomeFor && (
+        <OutcomeModal
+          request={outcomeFor}
+          busy={busyIds.includes(outcomeFor.id)}
+          onPick={(status) => {
+            const id = outcomeFor.id;
+            setOutcomeFor(null);
+            recordOutcome([id], status);
+          }}
+          onClose={() => setOutcomeFor(null)}
+        />
       )}
 
       {showDirectory && (

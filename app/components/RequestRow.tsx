@@ -323,7 +323,7 @@ export function RequestRow({
                 </span>
               )}
             </div>
-            {r.status === "handled" && (
+            {!r.mailSent && (
               <button
                 onClick={onUndo}
                 disabled={busy}
