@@ -12,6 +12,7 @@ import { RequestRow } from "./components/RequestRow";
 import { Footer, MonthTabs, Navbar } from "./components/Shell";
 import { StatStrip } from "./components/StatTile";
 import { StatsView } from "./components/StatsView";
+import { CalendarView } from "./components/CalendarView";
 import {
   ArtSearch,
   ArtTray,
@@ -51,6 +52,10 @@ const PAGE_COPY: Record<View, { title: string; subtitle: string }> = {
   history: {
     title: "History",
     subtitle: "Every request you have already actioned, month by month.",
+  },
+  calendar: {
+    title: "Calendar",
+    subtitle: "See who is on leave on any given day.",
   },
   stats: {
     title: "Stats",
@@ -692,7 +697,9 @@ export default function Home() {
               )}
             </div>
 
-            {view === "stats" ? (
+            {view === "calendar" ? (
+              <CalendarView />
+            ) : view === "stats" ? (
               <StatsView
                 data={statsData}
                 loading={statsLoading}

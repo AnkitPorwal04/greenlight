@@ -7,7 +7,7 @@ export type AuthState = {
   teamCount?: number;
 };
 export type Action = "approved" | "rejected";
-export type View = "dashboard" | "history" | "stats";
+export type View = "dashboard" | "history" | "stats" | "calendar";
 export type ToastTone = "success" | "error";
 
 export interface ToastState {
