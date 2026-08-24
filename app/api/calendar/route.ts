@@ -5,6 +5,7 @@ import { getUserFromRequest } from "@/lib/session";
 import { parseLeaveMail } from "@/lib/parser";
 import { loadDecisions, loadTeam } from "@/lib/store";
 import { filterByTeam } from "@/lib/team";
+import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
 import { gmailAfterDate, monthStart } from "@/lib/history";
 import { toCalendarLeaves } from "@/lib/calendar";
 
@@ -32,6 +33,17 @@ export async function GET(req: NextRequest) {
   const user = getUserFromRequest(req);
   if (!user) {
     return NextResponse.json({ error: "not_connected" }, { status: 401 });
+  }
+
+  const gate = await checkRateLimit("calendar", user, REFETCH);
+  if (!gate.allowed) {
+    return NextResponse.json(
+      { error: "rate_limited" },
+      {
+        status: 429,
+        headers: { "Retry-After": String(gate.retryAfterSeconds) },
+      }
+    );
   }
 
   const client = await getAuthorizedClient(user);
