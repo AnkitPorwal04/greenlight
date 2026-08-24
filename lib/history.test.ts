@@ -101,6 +101,21 @@ describe("decidedInMonth", () => {
     expect(kept.map((r) => r.id)).toEqual(["a"]);
   });
 
+  it("treats a withdrawn request as decided", () => {
+    const kept = decidedInMonth(
+      [
+        request({
+          id: "pulled",
+          status: "withdrawn",
+          receivedAt: new Date(2026, 7, 6, 9).toISOString(),
+        }),
+      ],
+      key
+    );
+
+    expect(kept.map((r) => r.id)).toEqual(["pulled"]);
+  });
+
   it("drops pending requests and unusable dates", () => {
     const kept = decidedInMonth(
       [
@@ -152,8 +167,23 @@ describe("monthTotals", () => {
       total: 4,
       approved: 2,
       rejected: 1,
+      withdrawn: 0,
       handled: 1,
     });
+  });
+
+  it("keeps withdrawn out of the three decision counts", () => {
+    const totals = monthTotals([
+      request({ id: "a", status: "approved" }),
+      request({ id: "w", status: "withdrawn" }),
+      request({ id: "x", status: "withdrawn" }),
+    ]);
+
+    expect(totals.approved).toBe(1);
+    expect(totals.rejected).toBe(0);
+    expect(totals.handled).toBe(0);
+    expect(totals.withdrawn).toBe(2);
+    expect(totals.total).toBe(3);
   });
 
   it("returns zeroes for an empty month", () => {
@@ -161,6 +191,7 @@ describe("monthTotals", () => {
       total: 0,
       approved: 0,
       rejected: 0,
+      withdrawn: 0,
       handled: 0,
     });
   });
