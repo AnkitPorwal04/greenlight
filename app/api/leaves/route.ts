@@ -7,6 +7,7 @@ import { loadDecisions, loadNoAuto, saveDecision, loadTeam } from "@/lib/store";
 import { loadEmployees } from "@/lib/employees";
 import { filterByTeam } from "@/lib/team";
 import { isEmailAddress } from "@/lib/email";
+import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
 import {
   collectMessageRefs,
   leavesWindowStart,
@@ -60,6 +61,17 @@ export async function GET(req: NextRequest) {
   const user = getUserFromRequest(req);
   if (!user) {
     return NextResponse.json({ error: "not_connected" }, { status: 401 });
+  }
+
+  const gate = await checkRateLimit("leaves", user, REFETCH);
+  if (!gate.allowed) {
+    return NextResponse.json(
+      { error: "rate_limited" },
+      {
+        status: 429,
+        headers: { "Retry-After": String(gate.retryAfterSeconds) },
+      }
+    );
   }
 
   const client = await getAuthorizedClient(user);

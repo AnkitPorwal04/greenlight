@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import { checkRateLimit, clientIp, PASSCODE_ATTEMPTS } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -7,6 +8,21 @@ export async function POST(req: NextRequest) {
   const passcode = process.env.APP_PASSCODE;
   if (!passcode) {
     return NextResponse.json({ ok: true, note: "no passcode configured" });
+  }
+
+  const gate = await checkRateLimit(
+    "passcode",
+    clientIp(req),
+    PASSCODE_ATTEMPTS
+  );
+  if (!gate.allowed) {
+    return NextResponse.json(
+      { error: "rate_limited" },
+      {
+        status: 429,
+        headers: { "Retry-After": String(gate.retryAfterSeconds) },
+      }
+    );
   }
 
   let provided: string;
