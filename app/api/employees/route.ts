@@ -5,15 +5,24 @@ import {
   parseEmployeeInput,
   type Employee,
 } from "@/lib/employees";
+import { getUserFromRequest } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  if (!getUserFromRequest(req)) {
+    return NextResponse.json({ error: "not_connected" }, { status: 401 });
+  }
+
   const employees = await loadEmployees();
   return NextResponse.json({ employees: Object.values(employees) });
 }
 
 export async function PUT(req: NextRequest) {
+  if (!getUserFromRequest(req)) {
+    return NextResponse.json({ error: "not_connected" }, { status: 401 });
+  }
+
   let raw: string;
   try {
     const body = await req.json();
