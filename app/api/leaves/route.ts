@@ -6,6 +6,7 @@ import { parseLeaveMail, extractBodyText } from "@/lib/parser";
 import { loadDecisions, loadNoAuto, saveDecision, loadTeam } from "@/lib/store";
 import { loadEmployees } from "@/lib/employees";
 import { filterByTeam } from "@/lib/team";
+import { gmailAfterDate, monthStart } from "@/lib/history";
 import type { LeaveRequest } from "@/lib/types";
 
 function fromHeader(msg: gmail_v1.Schema$Message): string {
@@ -38,6 +39,12 @@ const SEARCH_QUERY =
   process.env.LEAVE_MAIL_QUERY ??
   'from:no-reply@greythr.com subject:"Leave Application from"';
 
+// The dashboard scans a rolling window rather than just the newest 50 mails, so
+// a pending request from earlier in the month can't silently drop off. The
+// window covers the current and previous month (roughly the last two months).
+const DASHBOARD_MONTHS_BACK = 1;
+const MAX_MESSAGES = 300;
+
 export async function GET(req: NextRequest) {
   const user = getUserFromRequest(req);
   if (!user) {
@@ -56,8 +63,10 @@ export async function GET(req: NextRequest) {
         gmail.users.getProfile({ userId: "me" }),
         gmail.users.messages.list({
           userId: "me",
-          q: SEARCH_QUERY,
-          maxResults: 50,
+          q: `${SEARCH_QUERY} after:${gmailAfterDate(
+            monthStart(new Date(), DASHBOARD_MONTHS_BACK)
+          )}`,
+          maxResults: MAX_MESSAGES,
         }),
         loadDecisions(user),
         loadEmployees(),
@@ -69,20 +78,27 @@ export async function GET(req: NextRequest) {
     const ids = list.data.messages ?? [];
 
     const threadIds = [...new Set(ids.map((m) => m.threadId!))];
-    const threads = await Promise.all(
-      threadIds.map((tid) =>
-        gmail.users.threads.get({
-          userId: "me",
-          id: tid,
-          format: "full",
-        }),
-      ),
-    );
+    // Fetch in batches so a wider window (up to a few hundred threads) does not
+    // fire hundreds of concurrent Gmail requests at once.
+    const THREAD_BATCH = 40;
+    const threads: gmail_v1.Schema$Thread[] = [];
+    for (let i = 0; i < threadIds.length; i += THREAD_BATCH) {
+      const batch = threadIds.slice(i, i + THREAD_BATCH);
+      const fetched = await Promise.all(
+        batch.map((tid) =>
+          gmail.users.threads.get({
+            userId: "me",
+            id: tid,
+            format: "full",
+          }),
+        ),
+      );
+      for (const res of fetched) threads.push(res.data);
+    }
 
     const wantedIds = new Set(ids.map((m) => m.id!));
     const requests: LeaveRequest[] = [];
-    for (const res of threads) {
-      const thread = res.data;
+    for (const thread of threads) {
       const wanted = (thread.messages ?? []).filter((m) =>
         wantedIds.has(m.id!),
       );
