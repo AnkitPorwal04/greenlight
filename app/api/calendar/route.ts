@@ -6,7 +6,7 @@ import { parseLeaveMail } from "@/lib/parser";
 import { loadDecisions, loadTeam } from "@/lib/store";
 import { filterByTeam } from "@/lib/team";
 import { gmailAfterDate, monthStart } from "@/lib/history";
-import { parseLeaveDate } from "@/lib/leave-dates";
+import { toCalendarLeaves } from "@/lib/calendar";
 
 export const dynamic = "force-dynamic";
 
@@ -19,21 +19,6 @@ const BATCH_SIZE = 40;
 // Look back a few months of applications so both recent and upcoming leaves are
 // covered (a leave for next month was applied recently).
 const MONTHS_BACK = 2;
-
-// A single leave, reduced to what the calendar needs. Dates are day strings
-// ("YYYY-MM-DD") so a leave never shifts between server and browser timezones.
-export interface CalendarLeave {
-  id: string;
-  employeeName: string;
-  employeeCode: string;
-  leaveType: string;
-  status: string;
-  fromDate: string;
-  toDate: string;
-  fromYmd: string;
-  toYmd: string;
-  numberOfDays: number;
-}
 
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -111,40 +96,4 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-// Turn parsed leave requests into calendar entries: drop rejected ones (that
-// person is not actually on leave) and anything whose dates don't parse.
-function toCalendarLeaves(
-  rows: {
-    id: string;
-    employeeName: string;
-    employeeCode: string;
-    leaveType: string;
-    fromDate: string;
-    toDate: string;
-    numberOfDays: number;
-    status: string;
-  }[]
-): CalendarLeave[] {
-  const out: CalendarLeave[] = [];
-  for (const r of rows) {
-    if (r.status === "rejected") continue;
-    const fromYmd = parseLeaveDate(r.fromDate);
-    const toYmd = parseLeaveDate(r.toDate) ?? fromYmd;
-    if (fromYmd === null || toYmd === null) continue;
-    out.push({
-      id: r.id,
-      employeeName: r.employeeName,
-      employeeCode: r.employeeCode,
-      leaveType: r.leaveType,
-      status: r.status,
-      fromDate: r.fromDate,
-      toDate: r.toDate,
-      fromYmd,
-      toYmd,
-      numberOfDays: r.numberOfDays,
-    });
-  }
-  return out;
 }
