@@ -359,6 +359,12 @@ export function Navbar({
             onClick={() => onView("history")}
           />
           <Tab
+            active={view === "calendar"}
+            label="Calendar"
+            disabled={!connected}
+            onClick={() => onView("calendar")}
+          />
+          <Tab
             active={view === "stats"}
             label="Stats"
             disabled={!connected}
@@ -446,6 +452,12 @@ export function Navbar({
                 label="History"
                 disabled={!connected}
                 onClick={() => onView("history")}
+              />
+              <Tab
+                active={view === "calendar"}
+                label="Calendar"
+                disabled={!connected}
+                onClick={() => onView("calendar")}
               />
               <Tab
                 active={view === "stats"}
