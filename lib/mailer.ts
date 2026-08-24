@@ -16,6 +16,41 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+export function sanitizeHeaderValue(value: string): string {
+  return value.replace(/[\r\n]/g, "").trim();
+}
+
+export function encodeSubjectHeader(subject: string): string {
+  const encoded = /^[\x20-\x7e]*$/.test(subject)
+    ? subject
+    : `=?UTF-8?B?${Buffer.from(subject, "utf8").toString("base64")}?=`;
+  return sanitizeHeaderValue(encoded);
+}
+
+export function buildRawMessage(parts: {
+  to: string;
+  cc: string[];
+  subject: string;
+  inReplyTo: string;
+  htmlBody: string;
+}): string {
+  const inReplyTo = sanitizeHeaderValue(parts.inReplyTo);
+  const cc = parts.cc.map(sanitizeHeaderValue).filter(Boolean);
+  const headers = [
+    `To: ${sanitizeHeaderValue(parts.to)}`,
+    cc.length ? `Cc: ${cc.join(", ")}` : null,
+    `Subject: ${encodeSubjectHeader(parts.subject)}`,
+    inReplyTo ? `In-Reply-To: ${inReplyTo}` : null,
+    inReplyTo ? `References: ${inReplyTo}` : null,
+    `Content-Type: text/html; charset="UTF-8"`,
+    `MIME-Version: 1.0`,
+  ]
+    .filter(Boolean)
+    .join("\r\n");
+
+  return `${headers}\r\n\r\n${parts.htmlBody}`;
+}
+
 async function fetchSignature(client: OAuth2Client): Promise<string> {
   try {
     const gmail = getGmail(client);
@@ -67,23 +102,13 @@ export async function sendDecisionMail(
     origMessageId = "";
   }
 
-  const encodedSubject = /^[\x20-\x7e]*$/.test(replySubject)
-    ? replySubject
-    : `=?UTF-8?B?${Buffer.from(replySubject, "utf8").toString("base64")}?=`;
-
-  const headers = [
-    `To: ${input.to}`,
-    input.cc.length ? `Cc: ${input.cc.join(", ")}` : null,
-    `Subject: ${encodedSubject}`,
-    origMessageId ? `In-Reply-To: ${origMessageId}` : null,
-    origMessageId ? `References: ${origMessageId}` : null,
-    `Content-Type: text/html; charset="UTF-8"`,
-    `MIME-Version: 1.0`,
-  ]
-    .filter(Boolean)
-    .join("\r\n");
-
-  const raw = `${headers}\r\n\r\n${htmlBody}`;
+  const raw = buildRawMessage({
+    to: input.to,
+    cc: input.cc,
+    subject: replySubject,
+    inReplyTo: origMessageId,
+    htmlBody,
+  });
 
   await gmail.users.messages.send({
     userId: "me",

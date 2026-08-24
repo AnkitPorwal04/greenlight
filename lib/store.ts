@@ -89,6 +89,16 @@ export async function saveDecision(
   await setJSON(decisionsKey(email), all);
 }
 
+export async function saveDecisions(
+  email: string,
+  messageIds: string[],
+  decision: Decision
+) {
+  const all = await loadDecisions(email);
+  for (const id of messageIds) all[id] = decision;
+  await setJSON(decisionsKey(email), all);
+}
+
 // Used to roll back an optimistically-saved decision when the mail send fails,
 // so the manager can safely retry without a duplicate being left behind.
 export async function deleteDecision(

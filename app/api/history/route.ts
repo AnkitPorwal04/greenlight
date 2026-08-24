@@ -6,6 +6,7 @@ import { parseLeaveMail, extractBodyText } from "@/lib/parser";
 import { loadDecisions, loadTeam } from "@/lib/store";
 import { loadEmployees } from "@/lib/employees";
 import { filterByTeam } from "@/lib/team";
+import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
 import { historyMonthCount, monthStart } from "@/lib/history";
 import {
   collectMessageRefs,
@@ -38,6 +39,17 @@ export async function GET(req: NextRequest) {
   const user = getUserFromRequest(req);
   if (!user) {
     return NextResponse.json({ error: "not_connected" }, { status: 401 });
+  }
+
+  const gate = await checkRateLimit("history", user, REFETCH);
+  if (!gate.allowed) {
+    return NextResponse.json(
+      { error: "rate_limited" },
+      {
+        status: 429,
+        headers: { "Retry-After": String(gate.retryAfterSeconds) },
+      }
+    );
   }
 
   const client = await getAuthorizedClient(user);

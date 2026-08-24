@@ -34,9 +34,17 @@ export async function getJSON<T>(key: string): Promise<T | null> {
   }
 }
 
-export async function setJSON(key: string, value: unknown): Promise<void> {
+export async function setJSON(
+  key: string,
+  value: unknown,
+  ttlSeconds?: number
+): Promise<void> {
   if (redis) {
-    await redis.set(key, value);
+    if (ttlSeconds && ttlSeconds > 0) {
+      await redis.set(key, value, { ex: Math.ceil(ttlSeconds) });
+    } else {
+      await redis.set(key, value);
+    }
     return;
   }
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });

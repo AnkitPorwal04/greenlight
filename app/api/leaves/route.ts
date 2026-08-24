@@ -6,6 +6,8 @@ import { parseLeaveMail, extractBodyText } from "@/lib/parser";
 import { loadDecisions, loadNoAuto, saveDecision, loadTeam } from "@/lib/store";
 import { loadEmployees } from "@/lib/employees";
 import { filterByTeam } from "@/lib/team";
+import { isEmailAddress } from "@/lib/email";
+import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
 import {
   collectMessageRefs,
   leavesWindowStart,
@@ -59,6 +61,17 @@ export async function GET(req: NextRequest) {
   const user = getUserFromRequest(req);
   if (!user) {
     return NextResponse.json({ error: "not_connected" }, { status: 401 });
+  }
+
+  const gate = await checkRateLimit("leaves", user, REFETCH);
+  if (!gate.allowed) {
+    return NextResponse.json(
+      { error: "rate_limited" },
+      {
+        status: 429,
+        headers: { "Retry-After": String(gate.retryAfterSeconds) },
+      }
+    );
   }
 
   const client = await getAuthorizedClient(user);
@@ -150,10 +163,10 @@ export async function GET(req: NextRequest) {
           : Date.now();
         const employeeEmail = directoryEntry?.email ?? parsed.employeeEmail;
 
-        if (!decision && autoAllowed && employeeEmail) {
+        if (!decision && autoAllowed && isEmailAddress(employeeEmail)) {
           const sent = await gmail.users.messages.list({
             userId: "me",
-            q: `in:sent to:${employeeEmail} after:${Math.floor(receivedMs / 1000)}`,
+            q: `in:sent to:${employeeEmail.trim()} after:${Math.floor(receivedMs / 1000)}`,
             maxResults: 1,
           });
           if (sent.data.messages?.length) {

@@ -92,7 +92,8 @@ Requests match to the directory by employee code, so every reply lands at the *v
 | --- | --- | --- |
 | `GOOGLE_CLIENT_ID` | Yes | Your OAuth 2.0 client ID |
 | `GOOGLE_CLIENT_SECRET` | Yes | Your OAuth 2.0 client secret |
-| `APP_PASSCODE` | Production | The shared passcode that gates the app (it also signs identity cookies) |
+| `APP_PASSCODE` | Production | The shared passcode that gates the app |
+| `SESSION_SECRET` | Production | Signs identity cookies. At least 32 characters, and **not** the same value as `APP_PASSCODE` — generate one with `openssl rand -hex 32` |
 | `UPSTASH_REDIS_REST_URL` | Production | Set by the Vercel + Upstash integration (`KV_REST_API_URL` works too) |
 | `UPSTASH_REDIS_REST_TOKEN` | Production | Same idea (`KV_REST_API_TOKEN` works too) |
 | `GOOGLE_REDIRECT_URI` | No | Override; defaults to `<request-origin>/api/auth/callback` |
