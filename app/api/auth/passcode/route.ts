@@ -17,10 +17,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
 
-  const a = Buffer.from(provided);
-  const b = Buffer.from(passcode);
-  const match = a.length === b.length && crypto.timingSafeEqual(a, b);
-  if (!match) {
+  const a = crypto.createHash("sha256").update(provided).digest();
+  const b = crypto.createHash("sha256").update(passcode).digest();
+  if (!crypto.timingSafeEqual(a, b)) {
     return NextResponse.json({ error: "wrong_passcode" }, { status: 401 });
   }
 

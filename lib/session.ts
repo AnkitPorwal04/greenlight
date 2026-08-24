@@ -3,9 +3,40 @@ import type { NextRequest, NextResponse } from "next/server";
 
 const USER_COOKIE = "gl_user";
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 180;
+const DEV_SECRET = "greenlight-dev-secret";
+const MIN_SECRET_LENGTH = 32;
+
+let warnedAboutPasscodeFallback = false;
 
 function secret(): string {
-  return process.env.APP_PASSCODE ?? "greenlight-dev-secret";
+  const dedicated = process.env.SESSION_SECRET?.trim();
+  const production = process.env.NODE_ENV === "production";
+
+  if (dedicated) {
+    if (dedicated.length >= MIN_SECRET_LENGTH) return dedicated;
+    if (production) {
+      throw new Error(
+        `SESSION_SECRET must be at least ${MIN_SECRET_LENGTH} characters`
+      );
+    }
+    return dedicated;
+  }
+
+  if (!production) return DEV_SECRET;
+
+  const passcode = process.env.APP_PASSCODE;
+  if (!passcode) {
+    throw new Error(
+      "SESSION_SECRET is missing and there is no APP_PASSCODE to fall back to"
+    );
+  }
+  if (!warnedAboutPasscodeFallback) {
+    warnedAboutPasscodeFallback = true;
+    console.warn(
+      "SESSION_SECRET missing — falling back to APP_PASSCODE; set SESSION_SECRET"
+    );
+  }
+  return passcode;
 }
 
 function hmac(email: string): string {
