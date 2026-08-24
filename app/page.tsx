@@ -39,6 +39,10 @@ import {
   monthLabel,
   monthTotals,
 } from "@/lib/history";
+import {
+  HISTORY_MAX_MESSAGES,
+  LEAVES_MAX_MESSAGES,
+} from "@/lib/gmail-window";
 import { recordedToast, type RecordedStatus } from "@/lib/outcome";
 import type { StatsPayload } from "@/lib/stats";
 import type { LeaveRequest } from "@/lib/types";
@@ -894,7 +898,8 @@ export default function Home() {
                     !query.trim() &&
                     !showSkeleton && (
                       <p className="mt-8 border-t border-[var(--border)] pt-4 text-center font-mono text-[11px] text-[var(--text-muted)]">
-                        Showing the newest 500 mails in this window
+                        Showing the newest {HISTORY_MAX_MESSAGES} mails in this
+                        window
                       </p>
                     )}
 
@@ -903,8 +908,8 @@ export default function Home() {
                     !query.trim() &&
                     !showSkeleton && (
                       <p className="mt-8 border-t border-[var(--border)] pt-4 text-center text-[11px] text-[var(--text-muted)]">
-                        Showing the latest 50 matching requests. Older ones are
-                        not shown yet.
+                        Showing the newest {LEAVES_MAX_MESSAGES} mails from this
+                        month and last. Older ones are not shown yet.
                       </p>
                     )}
                 </section>

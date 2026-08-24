@@ -6,7 +6,13 @@ import { parseLeaveMail, extractBodyText } from "@/lib/parser";
 import { loadDecisions, loadTeam } from "@/lib/store";
 import { loadEmployees } from "@/lib/employees";
 import { filterByTeam } from "@/lib/team";
-import { gmailAfterDate, historyMonthCount, monthStart } from "@/lib/history";
+import { historyMonthCount, monthStart } from "@/lib/history";
+import {
+  collectMessageRefs,
+  windowedQuery,
+  GMAIL_PAGE_SIZE,
+  HISTORY_MAX_MESSAGES,
+} from "@/lib/gmail-window";
 import type { LeaveRequest } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +21,6 @@ const SEARCH_QUERY =
   process.env.LEAVE_MAIL_QUERY ??
   'from:no-reply@greythr.com subject:"Leave Application from"';
 
-const MAX_MESSAGES = 500;
 const BATCH_SIZE = 40;
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -42,12 +47,19 @@ export async function GET(req: NextRequest) {
 
   try {
     const gmail = getGmail(client);
-    const [profile, list, decisions, employees, team] = await Promise.all([
+    const [profile, listed, decisions, employees, team] = await Promise.all([
       gmail.users.getProfile({ userId: "me" }),
-      gmail.users.messages.list({
-        userId: "me",
-        q: `${SEARCH_QUERY} after:${gmailAfterDate(since)}`,
-        maxResults: MAX_MESSAGES,
+      collectMessageRefs(HISTORY_MAX_MESSAGES, async (pageToken) => {
+        const page = await gmail.users.messages.list({
+          userId: "me",
+          q: windowedQuery(SEARCH_QUERY, since),
+          maxResults: GMAIL_PAGE_SIZE,
+          pageToken,
+        });
+        return {
+          refs: (page.data.messages ?? []).map((m) => ({ id: m.id ?? "" })),
+          nextPageToken: page.data.nextPageToken ?? undefined,
+        };
       }),
       loadDecisions(user),
       loadEmployees(),
@@ -55,13 +67,7 @@ export async function GET(req: NextRequest) {
     ]);
 
     const selfEmail = profile.data.emailAddress ?? "";
-    const ids = [
-      ...new Set(
-        (list.data.messages ?? [])
-          .map((m) => m.id)
-          .filter((id): id is string => Boolean(id))
-      ),
-    ];
+    const ids = listed.refs.map((r) => r.id);
 
     const messages: gmail_v1.Schema$Message[] = [];
     for (const batch of chunk(ids, BATCH_SIZE)) {
@@ -112,7 +118,7 @@ export async function GET(req: NextRequest) {
       selfEmail,
       months,
       since: since.toISOString(),
-      capped: Boolean(list.data.nextPageToken),
+      capped: listed.capped,
     });
   } catch (e) {
     return NextResponse.json(
