@@ -20,6 +20,7 @@ export interface StatsMonth {
 export interface StatsEmployeeOutcomes {
   approved: number;
   rejected: number;
+  withdrawn: number;
   handled: number;
   pending: number;
 }
@@ -53,6 +54,7 @@ export interface StatsOutcomes {
   applied: number;
   approved: number;
   rejected: number;
+  withdrawn: number;
   handled: number;
   pending: number;
 }
@@ -98,6 +100,15 @@ function receivedTime(value: string): number {
   return Number.isNaN(ts) ? 0 : ts;
 }
 
+function outcomeOf(status: LeaveStatus | undefined): StatsOutcome {
+  return status === "approved" ||
+    status === "rejected" ||
+    status === "withdrawn" ||
+    status === "handled"
+    ? status
+    : "pending";
+}
+
 export function aggregateStatsForTeam(
   entries: StatsEntry[],
   team: string[]
@@ -119,6 +130,7 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
     applied: 0,
     approved: 0,
     rejected: 0,
+    withdrawn: 0,
     handled: 0,
     pending: 0,
   };
@@ -130,18 +142,15 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
     const received = new Date(entry.receivedAt);
     const validDate = !Number.isNaN(received.getTime());
 
-    const outcome: StatsOutcome =
-      entry.status === "approved" ||
-      entry.status === "rejected" ||
-      entry.status === "handled"
-        ? entry.status
-        : "pending";
+    const outcome = outcomeOf(entry.status);
+    const counted = outcome !== "withdrawn";
 
-    outcomes.applied += 1;
     outcomes[outcome] += 1;
+    if (counted) outcomes.applied += 1;
 
-    if (validDate) {
-      earliest = Math.min(earliest, received.getTime());
+    if (validDate) earliest = Math.min(earliest, received.getTime());
+
+    if (counted && validDate) {
       const key = monthKey(received);
       let slot = months.get(key);
       if (!slot) {
@@ -166,15 +175,23 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
           requests: 0,
           days: 0,
           byType: {},
-          outcomes: { approved: 0, rejected: 0, handled: 0, pending: 0 },
+          outcomes: {
+            approved: 0,
+            rejected: 0,
+            withdrawn: 0,
+            handled: 0,
+            pending: 0,
+          },
           entries: [],
         };
         employees.set(employeeKey, person);
       }
-      person.requests += 1;
-      person.days += days;
       person.outcomes[outcome] += 1;
-      bump(person.byType, type, 1);
+      if (counted) {
+        person.requests += 1;
+        person.days += days;
+        bump(person.byType, type, 1);
+      }
       person.entries.push({
         receivedAt: entry.receivedAt,
         leaveType: type,
@@ -183,13 +200,15 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
       });
     }
 
-    let typeRow = types.get(type);
-    if (!typeRow) {
-      typeRow = { type, requests: 0, days: 0 };
-      types.set(type, typeRow);
+    if (counted) {
+      let typeRow = types.get(type);
+      if (!typeRow) {
+        typeRow = { type, requests: 0, days: 0 };
+        types.set(type, typeRow);
+      }
+      typeRow.requests += 1;
+      typeRow.days += days;
     }
-    typeRow.requests += 1;
-    typeRow.days += days;
   }
 
   const byMonth = [...months.values()]
