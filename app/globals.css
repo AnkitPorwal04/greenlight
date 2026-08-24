@@ -270,6 +270,11 @@ html.light .accent:hover {
   background: var(--lamp-dim-green);
 }
 
+.lamp-hollow {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
 .lamp-green {
   --lamp-hue: var(--signal-green);
   background: var(--signal-green);

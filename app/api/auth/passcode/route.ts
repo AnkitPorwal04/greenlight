@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import { checkRateLimit, clientIp, PASSCODE_ATTEMPTS } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -7,6 +8,21 @@ export async function POST(req: NextRequest) {
   const passcode = process.env.APP_PASSCODE;
   if (!passcode) {
     return NextResponse.json({ ok: true, note: "no passcode configured" });
+  }
+
+  const gate = await checkRateLimit(
+    "passcode",
+    clientIp(req),
+    PASSCODE_ATTEMPTS
+  );
+  if (!gate.allowed) {
+    return NextResponse.json(
+      { error: "rate_limited" },
+      {
+        status: 429,
+        headers: { "Retry-After": String(gate.retryAfterSeconds) },
+      }
+    );
   }
 
   let provided: string;
@@ -17,10 +33,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
 
-  const a = Buffer.from(provided);
-  const b = Buffer.from(passcode);
-  const match = a.length === b.length && crypto.timingSafeEqual(a, b);
-  if (!match) {
+  const a = crypto.createHash("sha256").update(provided).digest();
+  const b = crypto.createHash("sha256").update(passcode).digest();
+  if (!crypto.timingSafeEqual(a, b)) {
     return NextResponse.json({ error: "wrong_passcode" }, { status: 401 });
   }
 

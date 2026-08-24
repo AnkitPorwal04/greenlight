@@ -14,6 +14,7 @@ export interface MonthTotals {
   total: number;
   approved: number;
   rejected: number;
+  withdrawn: number;
   handled: number;
 }
 
@@ -71,11 +72,13 @@ export function monthTotals(requests: LeaveRequest[]): MonthTotals {
     total: 0,
     approved: 0,
     rejected: 0,
+    withdrawn: 0,
     handled: 0,
   };
   for (const request of requests) {
     if (request.status === "approved") totals.approved += 1;
     else if (request.status === "rejected") totals.rejected += 1;
+    else if (request.status === "withdrawn") totals.withdrawn += 1;
     else if (request.status === "handled") totals.handled += 1;
     else continue;
     totals.total += 1;

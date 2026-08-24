@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { clearUserCookie } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -11,5 +12,6 @@ export async function POST() {
     maxAge: 0,
     path: "/",
   });
+  clearUserCookie(res);
   return res;
 }

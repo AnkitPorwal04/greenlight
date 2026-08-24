@@ -98,6 +98,12 @@ const OUTCOMES: {
     lamp: "",
     tone: "text-[var(--text-muted)]",
   },
+  {
+    key: "withdrawn",
+    label: "withdrawn",
+    lamp: "lamp-hollow",
+    tone: "text-[var(--text-muted)]",
+  },
 ];
 
 const OUTCOME_BY_KEY = OUTCOMES.reduce(
@@ -107,6 +113,23 @@ const OUTCOME_BY_KEY = OUTCOMES.reduce(
   },
   {} as Record<StatsOutcome, (typeof OUTCOMES)[number]>
 );
+
+function overviewItems(data: StatsPayload) {
+  const items = [
+    { label: "Applied", value: String(data.outcomes.applied), muted: false },
+    { label: "People", value: String(data.byEmployee.length), muted: false },
+    { label: "Leave types", value: String(data.byType.length), muted: false },
+  ];
+  if (data.outcomes.withdrawn > 0) {
+    items.push({
+      label: "Withdrawn",
+      value: String(data.outcomes.withdrawn),
+      muted: true,
+    });
+  }
+  items.push({ label: "Since", value: formatDay(data.sinceDate), muted: false });
+  return items;
+}
 
 function OutcomeChips({ person }: { person: StatsEmployee }) {
   const shown = OUTCOMES.filter((o) => person.outcomes[o.key] > 0);
@@ -495,20 +518,27 @@ export function StatsView({
         className="mt-8 border-y border-[var(--border)] py-5"
       >
         <dl className="grid grid-cols-2 gap-x-4 gap-y-6 sm:-ml-10 sm:flex sm:flex-wrap sm:items-stretch sm:gap-0">
-          {[
-            { label: "Applied", value: String(data.outcomes.applied) },
-            { label: "People", value: String(data.byEmployee.length) },
-            { label: "Leave types", value: String(data.byType.length) },
-            { label: "Since", value: formatDay(data.sinceDate) },
-          ].map((item) => (
+          {overviewItems(data).map((item) => (
             <div
               key={item.label}
               className="min-w-0 sm:flex-none sm:border-l sm:border-[var(--border)] sm:px-10"
             >
-              <dd className="font-mono text-[22px] font-medium leading-none tracking-tight tabular-nums text-[var(--text-primary)] sm:text-[28px]">
+              <dd
+                className={`font-mono text-[22px] font-medium leading-none tracking-tight tabular-nums sm:text-[28px] ${
+                  item.muted
+                    ? "text-[var(--text-muted)]"
+                    : "text-[var(--text-primary)]"
+                }`}
+              >
                 {item.value}
               </dd>
-              <dt className="mt-2 whitespace-nowrap text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">
+              <dt className="mt-2 flex items-center gap-1.5 whitespace-nowrap text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">
+                {item.muted && (
+                  <span
+                    aria-hidden="true"
+                    className="lamp-dot lamp-hollow h-[5px] w-[5px] shrink-0"
+                  />
+                )}
                 {item.label}
               </dt>
             </div>

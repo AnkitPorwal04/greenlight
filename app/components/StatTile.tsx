@@ -1,10 +1,11 @@
-export type Tone = "amber" | "emerald" | "rose" | "neutral";
+export type Tone = "amber" | "emerald" | "rose" | "neutral" | "muted";
 
 const TONES: Record<Tone, { value: string; lamp: string }> = {
   amber: { value: "text-[var(--c-amber)]", lamp: "lamp-amber" },
   emerald: { value: "text-[var(--c-emerald)]", lamp: "lamp-green" },
   rose: { value: "text-[var(--c-rose)]", lamp: "lamp-red" },
   neutral: { value: "text-[var(--text-secondary)]", lamp: "" },
+  muted: { value: "text-[var(--text-muted)]", lamp: "lamp-hollow" },
 };
 
 export interface StatItem {

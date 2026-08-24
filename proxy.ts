@@ -2,6 +2,28 @@ import { NextRequest, NextResponse } from "next/server";
 
 const PUBLIC_PATHS = ["/login", "/api/auth/passcode", "/manifest.webmanifest", "/icons/", "/icon.svg"];
 
+const SAFE_METHODS = new Set(["GET", "HEAD"]);
+
+function isForeignOrigin(req: NextRequest): boolean {
+  const origin = req.headers.get("origin");
+  if (!origin) return false;
+
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    return true;
+  }
+
+  const ownHosts = [
+    req.headers.get("host"),
+    req.headers.get("x-forwarded-host"),
+    req.nextUrl.host,
+  ].filter((h): h is string => Boolean(h));
+
+  return !ownHosts.includes(originHost);
+}
+
 async function sha256Hex(input: string): Promise<string> {
   const digest = await crypto.subtle.digest(
     "SHA-256",
@@ -13,6 +35,10 @@ async function sha256Hex(input: string): Promise<string> {
 }
 
 export async function proxy(req: NextRequest) {
+  if (!SAFE_METHODS.has(req.method) && isForeignOrigin(req)) {
+    return NextResponse.json({ error: "bad_origin" }, { status: 403 });
+  }
+
   const passcode = process.env.APP_PASSCODE;
   if (!passcode) {
     // Fail closed: never serve an unprotected app in production. A missing

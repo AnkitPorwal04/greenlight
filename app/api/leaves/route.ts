@@ -6,6 +6,15 @@ import { parseLeaveMail, extractBodyText } from "@/lib/parser";
 import { loadDecisions, loadNoAuto, saveDecision, loadTeam } from "@/lib/store";
 import { loadEmployees } from "@/lib/employees";
 import { filterByTeam } from "@/lib/team";
+import { isEmailAddress } from "@/lib/email";
+import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
+import {
+  collectMessageRefs,
+  leavesWindowStart,
+  windowedQuery,
+  GMAIL_PAGE_SIZE,
+  LEAVES_MAX_MESSAGES,
+} from "@/lib/gmail-window";
 import type { LeaveRequest } from "@/lib/types";
 
 function fromHeader(msg: gmail_v1.Schema$Message): string {
@@ -38,10 +47,31 @@ const SEARCH_QUERY =
   process.env.LEAVE_MAIL_QUERY ??
   'from:no-reply@greythr.com subject:"Leave Application from"';
 
+const THREAD_BATCH_SIZE = 25;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size));
+  }
+  return out;
+}
+
 export async function GET(req: NextRequest) {
   const user = getUserFromRequest(req);
   if (!user) {
     return NextResponse.json({ error: "not_connected" }, { status: 401 });
+  }
+
+  const gate = await checkRateLimit("leaves", user, REFETCH);
+  if (!gate.allowed) {
+    return NextResponse.json(
+      { error: "rate_limited" },
+      {
+        status: 429,
+        headers: { "Retry-After": String(gate.retryAfterSeconds) },
+      }
+    );
   }
 
   const client = await getAuthorizedClient(user);
@@ -51,13 +81,24 @@ export async function GET(req: NextRequest) {
 
   try {
     const gmail = getGmail(client);
-    const [profile, list, decisions, employees, undone, team] =
+    const since = leavesWindowStart();
+    const [profile, listed, decisions, employees, undone, team] =
       await Promise.all([
         gmail.users.getProfile({ userId: "me" }),
-        gmail.users.messages.list({
-          userId: "me",
-          q: SEARCH_QUERY,
-          maxResults: 50,
+        collectMessageRefs(LEAVES_MAX_MESSAGES, async (pageToken) => {
+          const page = await gmail.users.messages.list({
+            userId: "me",
+            q: windowedQuery(SEARCH_QUERY, since),
+            maxResults: GMAIL_PAGE_SIZE,
+            pageToken,
+          });
+          return {
+            refs: (page.data.messages ?? []).map((m) => ({
+              id: m.id ?? "",
+              threadId: m.threadId ?? undefined,
+            })),
+            nextPageToken: page.data.nextPageToken ?? undefined,
+          };
         }),
         loadDecisions(user),
         loadEmployees(),
@@ -66,23 +107,32 @@ export async function GET(req: NextRequest) {
       ]);
     const noAuto = new Set(undone);
     const selfEmail = profile.data.emailAddress ?? "";
-    const ids = list.data.messages ?? [];
+    const refs = listed.refs;
 
-    const threadIds = [...new Set(ids.map((m) => m.threadId!))];
-    const threads = await Promise.all(
-      threadIds.map((tid) =>
-        gmail.users.threads.get({
-          userId: "me",
-          id: tid,
-          format: "full",
-        }),
+    const threadIds = [
+      ...new Set(
+        refs
+          .map((r) => r.threadId)
+          .filter((tid): tid is string => Boolean(tid)),
       ),
-    );
+    ];
+    const threads: gmail_v1.Schema$Thread[] = [];
+    for (const batch of chunk(threadIds, THREAD_BATCH_SIZE)) {
+      const fetched = await Promise.all(
+        batch.map((tid) =>
+          gmail.users.threads.get({
+            userId: "me",
+            id: tid,
+            format: "full",
+          }),
+        ),
+      );
+      for (const res of fetched) threads.push(res.data);
+    }
 
-    const wantedIds = new Set(ids.map((m) => m.id!));
+    const wantedIds = new Set(refs.map((r) => r.id));
     const requests: LeaveRequest[] = [];
-    for (const res of threads) {
-      const thread = res.data;
+    for (const thread of threads) {
       const wanted = (thread.messages ?? []).filter((m) =>
         wantedIds.has(m.id!),
       );
@@ -113,10 +163,10 @@ export async function GET(req: NextRequest) {
           : Date.now();
         const employeeEmail = directoryEntry?.email ?? parsed.employeeEmail;
 
-        if (!decision && autoAllowed && employeeEmail) {
+        if (!decision && autoAllowed && isEmailAddress(employeeEmail)) {
           const sent = await gmail.users.messages.list({
             userId: "me",
-            q: `in:sent to:${employeeEmail} after:${Math.floor(receivedMs / 1000)}`,
+            q: `in:sent to:${employeeEmail.trim()} after:${Math.floor(receivedMs / 1000)}`,
             maxResults: 1,
           });
           if (sent.data.messages?.length) {
@@ -151,13 +201,11 @@ export async function GET(req: NextRequest) {
         new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime(),
     );
 
-    // The Gmail search is capped at 50; a nextPageToken means older matching
-    // mails exist beyond what we fetched, so the UI can say so instead of
-    // silently hiding them.
     return NextResponse.json({
       requests: visible,
       selfEmail,
-      capped: Boolean(list.data.nextPageToken),
+      since: since.toISOString(),
+      capped: listed.capped,
     });
   } catch (e) {
     return NextResponse.json(

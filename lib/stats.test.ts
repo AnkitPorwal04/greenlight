@@ -62,6 +62,101 @@ describe("aggregateStats employee entries", () => {
   });
 });
 
+describe("withdrawn requests", () => {
+  const kept = entry({
+    id: "kept",
+    numberOfDays: 2,
+    status: "approved",
+  });
+  const pulled = entry({
+    id: "pulled",
+    leaveType: "Sick Leave",
+    numberOfDays: 5,
+    receivedAt: "2026-09-03T09:00:00.000Z",
+    status: "withdrawn",
+  });
+
+  it("stays out of the app-wide totals, chart and type grid", () => {
+    const stats = aggregateStats([kept, pulled]);
+
+    expect(stats.outcomes).toEqual({
+      applied: 1,
+      approved: 1,
+      rejected: 0,
+      withdrawn: 1,
+      handled: 0,
+      pending: 0,
+    });
+    expect(stats.byMonth).toHaveLength(1);
+    expect(stats.byMonth[0].total).toBe(1);
+    expect(stats.byMonth[0].byType).toEqual({ "Casual Leave": 1 });
+    expect(stats.byType).toEqual([
+      { type: "Casual Leave", requests: 1, days: 2 },
+    ]);
+    expect(stats.totalRequests).toBe(2);
+  });
+
+  it("never inflates the person it belongs to", () => {
+    const person = aggregateStats([kept, pulled]).byEmployee[0];
+
+    expect(person.requests).toBe(1);
+    expect(person.days).toBe(2);
+    expect(person.byType).toEqual({ "Casual Leave": 1 });
+    expect(person.outcomes.withdrawn).toBe(1);
+    expect(person.outcomes.approved).toBe(1);
+  });
+
+  it("still shows up in that person's own request list", () => {
+    const person = aggregateStats([kept, pulled]).byEmployee[0];
+
+    expect(person.entries.map((e) => e.status)).toEqual([
+      "withdrawn",
+      "approved",
+    ]);
+    expect(person.entries).toHaveLength(person.requests + 1);
+  });
+
+  it("leaves the ranking by days untouched", () => {
+    const stats = aggregateStats([
+      entry({
+        id: "a",
+        employeeCode: "E1",
+        employeeName: "Asha Rao",
+        numberOfDays: 3,
+      }),
+      entry({
+        id: "b",
+        employeeCode: "E2",
+        employeeName: "Dev Iyer",
+        numberOfDays: 2,
+      }),
+      entry({
+        id: "c",
+        employeeCode: "E2",
+        employeeName: "Dev Iyer",
+        numberOfDays: 9,
+        status: "withdrawn",
+      }),
+    ]);
+
+    expect(stats.byEmployee.map((p) => p.code)).toEqual(["E1", "E2"]);
+    expect(stats.byEmployee.map((p) => p.days)).toEqual([3, 2]);
+  });
+
+  it("counts a person whose only request was withdrawn at zero", () => {
+    const stats = aggregateStats([pulled]);
+
+    expect(stats.outcomes.applied).toBe(0);
+    expect(stats.outcomes.withdrawn).toBe(1);
+    expect(stats.byMonth).toEqual([]);
+    expect(stats.byType).toEqual([]);
+    expect(stats.byEmployee[0].requests).toBe(0);
+    expect(stats.byEmployee[0].days).toBe(0);
+    expect(stats.byEmployee[0].entries).toHaveLength(1);
+    expect(stats.sinceDate).toBe("2026-09-03T09:00:00.000Z");
+  });
+});
+
 describe("aggregateStatsForTeam", () => {
   const mine = entry({
     id: "mine",
@@ -95,6 +190,7 @@ describe("aggregateStatsForTeam", () => {
       applied: 1,
       approved: 1,
       rejected: 0,
+      withdrawn: 0,
       handled: 0,
       pending: 0,
     });
