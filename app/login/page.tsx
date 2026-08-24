@@ -74,8 +74,18 @@ export default function LoginPage() {
           <span className="lamp-dot lamp-green h-1.5 w-1.5" />
           Leave approvals, straight from your inbox
         </p>
-        <p className="mt-8 text-center font-mono text-[11px] text-[var(--text-muted)]">
-          Designed &amp; deployed by Archana and Ankit
+        <p className="mt-8 flex flex-wrap items-center gap-2 font-mono text-[11px] text-[var(--text-muted)]">
+          <span className="flex items-center gap-1">
+            <span className="lamp-dot lamp-red h-1.5 w-1.5" />
+            <span className="lamp-dot lamp-amber h-1.5 w-1.5" />
+            <span className="lamp-dot lamp-green h-1.5 w-1.5" />
+          </span>
+          <span className="uppercase tracking-[0.14em]">
+            designed &amp; deployed by
+          </span>
+          <span className="font-medium text-[var(--text-primary)]">
+            Archana &amp; Ankit
+          </span>
         </p>
       </form>
     </main>

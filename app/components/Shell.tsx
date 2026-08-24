@@ -485,8 +485,18 @@ export function Footer() {
           </span>
         </div>
       </div>
-      <p className="-mt-2 px-4 pb-6 text-center font-mono text-[11px] text-[var(--text-muted)] sm:px-6 lg:px-10">
-        Designed &amp; deployed by Archana and Ankit
+      <p className="-mt-2 flex items-center gap-2 px-4 pb-6 font-mono text-[11px] text-[var(--text-muted)] sm:px-6 lg:px-10">
+        <span className="flex items-center gap-1">
+          <span className="lamp-dot lamp-red h-1.5 w-1.5" />
+          <span className="lamp-dot lamp-amber h-1.5 w-1.5" />
+          <span className="lamp-dot lamp-green h-1.5 w-1.5" />
+        </span>
+        <span className="uppercase tracking-[0.14em]">
+          designed &amp; deployed by
+        </span>
+        <span className="font-medium text-[var(--text-primary)]">
+          Archana &amp; Ankit
+        </span>
       </p>
     </footer>
   );
