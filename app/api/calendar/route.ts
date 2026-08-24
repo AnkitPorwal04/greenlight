@@ -20,7 +20,8 @@ const BATCH_SIZE = 40;
 // covered (a leave for next month was applied recently).
 const MONTHS_BACK = 2;
 
-// A single leave, reduced to what the calendar needs.
+// A single leave, reduced to what the calendar needs. Dates are day strings
+// ("YYYY-MM-DD") so a leave never shifts between server and browser timezones.
 export interface CalendarLeave {
   id: string;
   employeeName: string;
@@ -29,8 +30,8 @@ export interface CalendarLeave {
   status: string;
   fromDate: string;
   toDate: string;
-  fromMs: number;
-  toMs: number;
+  fromYmd: string;
+  toYmd: string;
   numberOfDays: number;
 }
 
@@ -129,9 +130,9 @@ function toCalendarLeaves(
   const out: CalendarLeave[] = [];
   for (const r of rows) {
     if (r.status === "rejected") continue;
-    const fromMs = parseLeaveDate(r.fromDate);
-    const toMs = parseLeaveDate(r.toDate) ?? fromMs;
-    if (fromMs === null || toMs === null) continue;
+    const fromYmd = parseLeaveDate(r.fromDate);
+    const toYmd = parseLeaveDate(r.toDate) ?? fromYmd;
+    if (fromYmd === null || toYmd === null) continue;
     out.push({
       id: r.id,
       employeeName: r.employeeName,
@@ -140,8 +141,8 @@ function toCalendarLeaves(
       status: r.status,
       fromDate: r.fromDate,
       toDate: r.toDate,
-      fromMs,
-      toMs,
+      fromYmd,
+      toYmd,
       numberOfDays: r.numberOfDays,
     });
   }

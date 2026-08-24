@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { IconAlert, IconChevron } from "./icons";
 import { avatarTone, initials, leaveTypeStyle, statusLabel } from "./utils";
 import {
-  fromDayInput,
+  addDaysYmd,
+  isValidYmd,
   leaveCoversDay,
-  startOfDayMs,
-  toDayInput,
+  longDateFromYmd,
+  todayYmd,
 } from "@/lib/leave-dates";
 
 interface CalendarLeave {
@@ -16,27 +17,16 @@ interface CalendarLeave {
   status: string;
   fromDate: string;
   toDate: string;
-  fromMs: number;
-  toMs: number;
+  fromYmd: string;
+  toYmd: string;
   numberOfDays: number;
-}
-
-const DAY = 86_400_000;
-
-function longDate(ms: number): string {
-  return new Date(ms).toLocaleDateString("en-GB", {
-    weekday: "long",
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  });
 }
 
 export function CalendarView() {
   const [leaves, setLeaves] = useState<CalendarLeave[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [day, setDay] = useState<number>(() => startOfDayMs(Date.now()));
+  const [day, setDay] = useState<string>(() => todayYmd());
 
   useEffect(() => {
     let cancelled = false;
@@ -68,7 +58,7 @@ export function CalendarView() {
   const onDay = useMemo(
     () =>
       leaves
-        .filter((l) => leaveCoversDay(l.fromMs, l.toMs, day))
+        .filter((l) => leaveCoversDay(l.fromYmd, l.toYmd, day))
         .sort((a, b) => a.employeeName.localeCompare(b.employeeName)),
     [leaves, day]
   );
@@ -78,7 +68,7 @@ export function CalendarView() {
       {/* Date picker */}
       <div className="mb-8 flex flex-wrap items-center gap-3">
         <button
-          onClick={() => setDay((d) => startOfDayMs(d - DAY))}
+          onClick={() => setDay((d) => addDaysYmd(d, -1))}
           aria-label="Previous day"
           className="press flex h-10 w-10 items-center justify-center rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
         >
@@ -86,23 +76,22 @@ export function CalendarView() {
         </button>
         <input
           type="date"
-          value={toDayInput(day)}
+          value={day}
           onChange={(e) => {
-            const ms = fromDayInput(e.target.value);
-            if (ms !== null) setDay(ms);
+            if (isValidYmd(e.target.value)) setDay(e.target.value);
           }}
           aria-label="Pick a day"
           className="field rounded-md px-3 py-2 font-mono text-[13px]"
         />
         <button
-          onClick={() => setDay((d) => startOfDayMs(d + DAY))}
+          onClick={() => setDay((d) => addDaysYmd(d, 1))}
           aria-label="Next day"
           className="press flex h-10 w-10 items-center justify-center rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
         >
           <IconChevron className="h-4 w-4 -rotate-90" />
         </button>
         <button
-          onClick={() => setDay(startOfDayMs(Date.now()))}
+          onClick={() => setDay(todayYmd())}
           className="press rounded-md px-3 py-2 text-[13px] font-medium text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"
         >
           Today
@@ -116,7 +105,7 @@ export function CalendarView() {
         </span>
         <span className="text-[13px] text-[var(--text-muted)]">
           {onDay.length === 1 ? "person on leave" : "people on leave"} on{" "}
-          {longDate(day)}
+          {longDateFromYmd(day)}
         </span>
       </div>
 
