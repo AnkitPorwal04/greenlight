@@ -6,7 +6,6 @@ import { parseLeaveMail, extractBodyText } from "@/lib/parser";
 import { loadDecisions, loadNoAuto, saveDecision, loadTeam } from "@/lib/store";
 import { loadEmployees } from "@/lib/employees";
 import { filterByTeam } from "@/lib/team";
-import { isEmailAddress } from "@/lib/email";
 import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
 import {
   collectMessageRefs,
@@ -160,21 +159,6 @@ export async function GET(req: NextRequest) {
           : Date.now();
         const employeeEmail = directoryEntry?.email ?? parsed.employeeEmail;
 
-        if (!decision && autoAllowed && isEmailAddress(employeeEmail)) {
-          const sent = await gmail.users.messages.list({
-            userId: "me",
-            q: `in:sent to:${employeeEmail.trim()} after:${Math.floor(receivedMs / 1000)}`,
-            maxResults: 1,
-          });
-          if (sent.data.messages?.length) {
-            decision = {
-              status: "handled",
-              decidedAt: new Date().toISOString(),
-              note: `Auto-detected: you mailed ${employeeEmail} after this request`,
-            };
-            await saveDecision(user, msg.id!, decision);
-          }
-        }
         requests.push({
           id: msg.id!,
           threadId: msg.threadId ?? "",
