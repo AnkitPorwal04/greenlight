@@ -140,4 +140,6 @@ There's no personal data in this repository. Your directory, your tokens, and yo
 
 ---
 
+🔴 🟡 🟢 **Designed & deployed by Archana & Ankit**
+
 *Made to give managers their afternoons back.* 🌱
