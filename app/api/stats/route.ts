@@ -5,6 +5,7 @@ import { getUserFromRequest } from "@/lib/session";
 import { parseLeaveMail } from "@/lib/parser";
 import { loadDecisions, loadTeam } from "@/lib/store";
 import { aggregateStatsForTeam, type StatsEntry } from "@/lib/stats";
+import { cancelledLeaveKeys, isLeaveCancelled } from "@/lib/cancellation";
 import { LEAVE_MAIL_QUERY } from "@/lib/gmail-window";
 
 export const dynamic = "force-dynamic";
@@ -63,24 +64,43 @@ export async function GET(req: NextRequest) {
       for (const res of fetched) messages.push(res.data);
     }
 
+    const parsedRows = messages
+      .map((msg) => {
+        const parsed = parseLeaveMail(msg, selfEmail);
+        if (!parsed) return null;
+        const id = msg.id ?? "";
+        return { msg, parsed, id, status: decisions[id]?.status ?? "pending" };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
+
+    // A leave whose cancellation has been approved was not actually taken.
+    const cancelled = cancelledLeaveKeys(
+      parsedRows.map((r) => ({
+        employeeCode: r.parsed.employeeCode,
+        fromDate: r.parsed.fromDate,
+        toDate: r.parsed.toDate,
+        status: r.status,
+        kind: r.parsed.kind,
+      }))
+    );
+
     const entries: StatsEntry[] = [];
-    for (const msg of messages) {
-      const parsed = parseLeaveMail(msg, selfEmail);
-      if (!parsed) continue;
+    for (const r of parsedRows) {
       // Cancellation requests are not leaves taken; keep them out of stats.
-      if (parsed.kind === "cancellation") continue;
-      const receivedMs = msg.internalDate
-        ? parseInt(msg.internalDate)
+      if (r.parsed.kind === "cancellation") continue;
+      // Neither is a leave the employee later cancelled.
+      if (isLeaveCancelled(r.parsed, cancelled)) continue;
+      const receivedMs = r.msg.internalDate
+        ? parseInt(r.msg.internalDate)
         : Date.now();
-      const id = msg.id ?? "";
       entries.push({
-        id,
-        employeeName: parsed.employeeName,
-        employeeCode: parsed.employeeCode,
-        leaveType: parsed.leaveType,
-        numberOfDays: parsed.numberOfDays,
+        id: r.id,
+        employeeName: r.parsed.employeeName,
+        employeeCode: r.parsed.employeeCode,
+        leaveType: r.parsed.leaveType,
+        numberOfDays: r.parsed.numberOfDays,
         receivedAt: new Date(receivedMs).toISOString(),
-        status: decisions[id]?.status ?? "pending",
+        status: r.status,
       });
     }
 

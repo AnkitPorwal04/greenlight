@@ -1,4 +1,5 @@
 import { parseLeaveDate } from "./leave-dates";
+import { cancelledLeaveKeys, isLeaveCancelled } from "./cancellation";
 import type { LeaveStatus } from "./types";
 
 export interface CalendarLeave {
@@ -33,11 +34,16 @@ export function countsAsOnLeave(status: string): boolean {
 }
 
 export function toCalendarLeaves(rows: CalendarCandidate[]): CalendarLeave[] {
+  // Leaves whose cancellation has been approved — the employee is no longer on
+  // leave those days, so the original application is dropped below.
+  const cancelled = cancelledLeaveKeys(rows);
+
   const out: CalendarLeave[] = [];
   for (const r of rows) {
-    // A cancellation request is not someone being on leave.
+    // A cancellation request is not itself someone being on leave.
     if (r.kind === "cancellation") continue;
     if (!countsAsOnLeave(r.status)) continue;
+    if (isLeaveCancelled(r, cancelled)) continue;
     const fromYmd = parseLeaveDate(r.fromDate);
     const toYmd = parseLeaveDate(r.toDate) ?? fromYmd;
     if (fromYmd === null || toYmd === null) continue;
