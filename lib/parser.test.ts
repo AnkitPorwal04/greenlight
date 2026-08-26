@@ -273,6 +273,14 @@ describe("parseLeaveMail - kind", () => {
     expect(r?.toDate).toBe("21 Aug 2026");
   });
 
+  it("does not misread a normal application whose name contains 'Cancellation'", () => {
+    const r = parseLeaveMail(
+      msg({ subject: "Leave Application from Cancellation Kumar [GRP9999]", plain: REGULAR }),
+      "manager@ethara-ai.com"
+    );
+    expect(r?.kind).toBe("leave");
+  });
+
   it("uses the subject, not the reason text, to detect a cancellation", () => {
     const body = REGULAR.replace(
       "Reason: Family function out of town.",
