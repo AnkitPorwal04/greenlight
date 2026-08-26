@@ -1,4 +1,5 @@
 import type { gmail_v1 } from "@googleapis/gmail";
+import type { LeaveKind } from "./types";
 
 export interface ParsedLeaveMail {
   employeeName: string;
@@ -13,6 +14,7 @@ export interface ParsedLeaveMail {
   fromSession: string;
   toSession: string;
   ccRecipients: string[];
+  kind: LeaveKind;
 }
 
 function decodeBase64Url(data: string): string {
@@ -101,14 +103,24 @@ export function parseLeaveMail(
 ): ParsedLeaveMail | null {
   const text = extractBodyText(message);
 
-  // "has applied for a leave" (regular) or "…a restricted leave" (restricted holiday)
+  // "has applied for a leave" (regular), "…a restricted leave" (restricted
+  // holiday), or "…a leave cancellation" (cancellation) all start "… has applied for".
   const applied = text.match(/(.+?)\s*\[([^\]]+)\]\s*has applied for/i);
   const subject = extractHeader(message, "Subject");
-  const subjectMatch = subject.match(/Leave Application from\s+(.+?)\s*\[([^\]]+)\]/i);
+  // Matches "Leave Application from X [code]" and "Leave Cancellation from
+  // X [code]" (greytHR puts "Cancellation" in the cancellation subject).
+  const subjectMatch = subject.match(
+    /(?:Application|Cancellation)\s+from\s+(.+?)\s*\[([^\]]+)\]/i
+  );
 
   const employeeName = (applied?.[1] ?? subjectMatch?.[1] ?? "").replace(/^Hi,?\s*/i, "").trim();
   const employeeCode = (applied?.[2] ?? subjectMatch?.[2] ?? "").trim();
   if (!employeeName) return null;
+
+  // greytHR flags a cancellation in the subject ("Leave Cancellation …"). We key
+  // off the subject rather than the body so a leave whose reason mentions
+  // "cancel" is not misread as a cancellation.
+  const kind: LeaveKind = /cancellation/i.test(subject) ? "cancellation" : "leave";
 
   const recipients = [
     ...extractEmails(extractHeader(message, "To")),
@@ -144,5 +156,6 @@ export function parseLeaveMail(
     fromSession: field(text, "From Session"),
     toSession: field(text, "To Session"),
     ccRecipients,
+    kind,
   };
 }

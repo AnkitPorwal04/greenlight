@@ -117,6 +117,14 @@ export function RequestRow({
             <span className="min-w-0 max-w-full truncate font-mono text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
               {r.employeeCode}
             </span>
+            {r.kind === "cancellation" && (
+              <span
+                title="Request to cancel a leave the employee had applied for"
+                className="inline-flex shrink-0 items-center rounded border border-[var(--c-amber)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--c-amber)]"
+              >
+                Cancellation
+              </span>
+            )}
             {isPending && !r.emailVerified && (
               <span
                 title="Email address was guessed from the name"

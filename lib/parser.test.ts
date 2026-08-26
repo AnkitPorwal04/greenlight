@@ -233,3 +233,55 @@ describe("extractBodyText", () => {
     expect(extractBodyText(message)).not.toContain("HTML VERSION");
   });
 });
+
+const CANCELLATION = [
+  "Hi,",
+  "",
+  "Isha Nair [GRP0987] has applied for a leave cancellation. Please log on to greytHR and review the request.",
+  "",
+  "Leave type: Sick Leave",
+  "From Date: 20 Aug 2026",
+  "To Date: 21 Aug 2026",
+  "Number of days: 2",
+  "Reason: Recovered earlier than expected.",
+  "Leave Balance: Sick: 4",
+].join("\n");
+
+describe("parseLeaveMail - kind", () => {
+  it("tags a normal application as kind 'leave'", () => {
+    const r = parseLeaveMail(
+      msg({ subject: "Leave Application from Aarav Sharma [GRP1042]", plain: REGULAR }),
+      "manager@ethara-ai.com"
+    );
+    expect(r?.kind).toBe("leave");
+  });
+
+  it("tags a cancellation mail as kind 'cancellation'", () => {
+    const r = parseLeaveMail(
+      msg({
+        subject: "Leave Cancellation from Isha Nair [GRP0987]",
+        to: "manager@ethara-ai.com",
+        plain: CANCELLATION,
+      }),
+      "manager@ethara-ai.com"
+    );
+    expect(r?.kind).toBe("cancellation");
+    expect(r?.employeeName).toBe("Isha Nair");
+    expect(r?.employeeCode).toBe("GRP0987");
+    expect(r?.leaveType).toBe("Sick Leave");
+    expect(r?.fromDate).toBe("20 Aug 2026");
+    expect(r?.toDate).toBe("21 Aug 2026");
+  });
+
+  it("uses the subject, not the reason text, to detect a cancellation", () => {
+    const body = REGULAR.replace(
+      "Reason: Family function out of town.",
+      "Reason: Rebooking a cancelled flight."
+    );
+    const r = parseLeaveMail(
+      msg({ subject: "Leave Application from Aarav Sharma [GRP1042]", plain: body }),
+      "manager@ethara-ai.com"
+    );
+    expect(r?.kind).toBe("leave");
+  });
+});

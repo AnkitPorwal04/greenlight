@@ -23,6 +23,7 @@ export interface CalendarCandidate {
   toDate: string;
   numberOfDays: number;
   status: string;
+  kind?: string;
 }
 
 export const NOT_ON_LEAVE_STATUSES: LeaveStatus[] = ["rejected", "withdrawn"];
@@ -34,6 +35,8 @@ export function countsAsOnLeave(status: string): boolean {
 export function toCalendarLeaves(rows: CalendarCandidate[]): CalendarLeave[] {
   const out: CalendarLeave[] = [];
   for (const r of rows) {
+    // A cancellation request is not someone being on leave.
+    if (r.kind === "cancellation") continue;
     if (!countsAsOnLeave(r.status)) continue;
     const fromYmd = parseLeaveDate(r.fromDate);
     const toYmd = parseLeaveDate(r.toDate) ?? fromYmd;

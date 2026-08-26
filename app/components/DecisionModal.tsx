@@ -36,6 +36,7 @@ export function DecisionModal({
           <>
             {approving ? "Approve" : "Reject"} {r.employeeName}&apos;s{" "}
             {r.leaveType.toLowerCase() || "leave"}
+            {r.kind === "cancellation" ? " cancellation" : ""}
           </>
         }
         subtitle={`${dateRange(r)} · ${dayCount(r.numberOfDays)} · ${r.employeeCode}`}

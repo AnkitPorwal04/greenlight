@@ -5,6 +5,11 @@ export type LeaveStatus =
   | "withdrawn"
   | "handled";
 
+// "leave" = a normal leave application; "cancellation" = a request to cancel a
+// leave the employee had already applied for. Absent means "leave" (backward
+// compatible with anything constructed before this field existed).
+export type LeaveKind = "leave" | "cancellation";
+
 export interface LeaveRequest {
   id: string;
   threadId: string;
@@ -24,6 +29,7 @@ export interface LeaveRequest {
   emailVerified: boolean;
   bodyText: string;
   status: LeaveStatus;
+  kind?: LeaveKind;
   decidedAt?: string;
   decisionNote?: string;
   mailSent?: boolean;

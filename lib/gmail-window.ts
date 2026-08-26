@@ -1,5 +1,12 @@
 import { gmailAfterDate, monthStart } from "./history";
 
+// Matches greytHR leave application AND leave cancellation mails. Overridable
+// via LEAVE_MAIL_QUERY for other HR systems. Kept narrow (both are subject-
+// specific) so unrelated greytHR mail is not pulled in.
+export const LEAVE_MAIL_QUERY =
+  process.env.LEAVE_MAIL_QUERY ??
+  'from:no-reply@greythr.com (subject:"Leave Application from" OR subject:cancellation)';
+
 export const LEAVES_MAX_MESSAGES = 500;
 export const HISTORY_MAX_MESSAGES = 1000;
 export const GMAIL_PAGE_SIZE = 100;

@@ -5,12 +5,9 @@ import { getUserFromRequest } from "@/lib/session";
 import { parseLeaveMail } from "@/lib/parser";
 import { loadDecisions, loadTeam } from "@/lib/store";
 import { aggregateStatsForTeam, type StatsEntry } from "@/lib/stats";
+import { LEAVE_MAIL_QUERY } from "@/lib/gmail-window";
 
 export const dynamic = "force-dynamic";
-
-const SEARCH_QUERY =
-  process.env.LEAVE_MAIL_QUERY ??
-  'from:no-reply@greythr.com subject:"Leave Application from"';
 
 const MAX_MESSAGES = 500;
 const BATCH_SIZE = 40;
@@ -40,7 +37,7 @@ export async function GET(req: NextRequest) {
       gmail.users.getProfile({ userId: "me" }),
       gmail.users.messages.list({
         userId: "me",
-        q: `${SEARCH_QUERY} after:${process.env.STATS_SINCE ?? "2026/08/01"}`,
+        q: `${LEAVE_MAIL_QUERY} after:${process.env.STATS_SINCE ?? "2026/08/01"}`,
         maxResults: MAX_MESSAGES,
       }),
       loadDecisions(user),
@@ -70,6 +67,8 @@ export async function GET(req: NextRequest) {
     for (const msg of messages) {
       const parsed = parseLeaveMail(msg, selfEmail);
       if (!parsed) continue;
+      // Cancellation requests are not leaves taken; keep them out of stats.
+      if (parsed.kind === "cancellation") continue;
       const receivedMs = msg.internalDate
         ? parseInt(msg.internalDate)
         : Date.now();
