@@ -8,12 +8,9 @@ import { filterByTeam } from "@/lib/team";
 import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
 import { gmailAfterDate, monthStart } from "@/lib/history";
 import { toCalendarLeaves } from "@/lib/calendar";
+import { LEAVE_MAIL_QUERY } from "@/lib/gmail-window";
 
 export const dynamic = "force-dynamic";
-
-const SEARCH_QUERY =
-  process.env.LEAVE_MAIL_QUERY ??
-  'from:no-reply@greythr.com subject:"Leave Application from"';
 
 const MAX_MESSAGES = 500;
 const BATCH_SIZE = 40;
@@ -59,7 +56,7 @@ export async function GET(req: NextRequest) {
       gmail.users.getProfile({ userId: "me" }),
       gmail.users.messages.list({
         userId: "me",
-        q: `${SEARCH_QUERY} after:${gmailAfterDate(since)}`,
+        q: `${LEAVE_MAIL_QUERY} after:${gmailAfterDate(since)}`,
         maxResults: MAX_MESSAGES,
       }),
       loadDecisions(user),

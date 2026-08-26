@@ -14,6 +14,7 @@ import {
   windowedQuery,
   GMAIL_PAGE_SIZE,
   LEAVES_MAX_MESSAGES,
+  LEAVE_MAIL_QUERY,
 } from "@/lib/gmail-window";
 import type { LeaveRequest } from "@/lib/types";
 
@@ -42,10 +43,6 @@ function threadHasMyReply(
 }
 
 export const dynamic = "force-dynamic";
-
-const SEARCH_QUERY =
-  process.env.LEAVE_MAIL_QUERY ??
-  'from:no-reply@greythr.com subject:"Leave Application from"';
 
 const THREAD_BATCH_SIZE = 25;
 
@@ -88,7 +85,7 @@ export async function GET(req: NextRequest) {
         collectMessageRefs(LEAVES_MAX_MESSAGES, async (pageToken) => {
           const page = await gmail.users.messages.list({
             userId: "me",
-            q: windowedQuery(SEARCH_QUERY, since),
+            q: windowedQuery(LEAVE_MAIL_QUERY, since),
             maxResults: GMAIL_PAGE_SIZE,
             pageToken,
           });

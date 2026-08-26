@@ -12,15 +12,16 @@ export function composeDecisionMail({ request, action }: ComposeInput) {
       ? request.fromDate
       : `${request.fromDate} to ${request.toDate}`;
 
-  const subject = `Re: Leave Application from ${request.employeeName} [${request.employeeCode}].`;
+  const isCancellation = request.kind === "cancellation";
+  const label = isCancellation ? "Cancellation" : "Application";
+  const subject = `Re: Leave ${label} from ${request.employeeName} [${request.employeeCode}].`;
 
-  const body = [
-    `Hi ${firstName},`,
-    ``,
-    `Your ${request.leaveType} request for ${dateRange} has been ${
-      action === "approved" ? "approved" : "rejected"
-    }.`,
-  ].join("\n");
+  const decided = action === "approved" ? "approved" : "rejected";
+  const line = isCancellation
+    ? `Your request to cancel your ${request.leaveType} for ${dateRange} has been ${decided}.`
+    : `Your ${request.leaveType} request for ${dateRange} has been ${decided}.`;
+
+  const body = [`Hi ${firstName},`, ``, line].join("\n");
 
   return { subject, body };
 }
