@@ -117,10 +117,16 @@ export function parseLeaveMail(
   const employeeCode = (applied?.[2] ?? subjectMatch?.[2] ?? "").trim();
   if (!employeeName) return null;
 
-  // greytHR flags a cancellation in the subject ("Leave Cancellation …"). We key
-  // off the subject rather than the body so a leave whose reason mentions
-  // "cancel" is not misread as a cancellation.
-  const kind: LeaveKind = /cancellation/i.test(subject) ? "cancellation" : "leave";
+  // greytHR flags a cancellation in the subject, mirroring the application
+  // subject ("Leave Cancellation from …"). Match the "Leave Cancellation" /
+  // "Cancellation from" marker rather than the bare word, so a normal
+  // application whose employee name happens to contain "Cancellation" (or a
+  // reason mentioning "cancel") is not misread. Kept flexible about surrounding
+  // wording so a subject prefix does not break detection.
+  const kind: LeaveKind =
+    /\bleave\s+cancellation\b|\bcancellation\s+from\b/i.test(subject)
+      ? "cancellation"
+      : "leave";
 
   const recipients = [
     ...extractEmails(extractHeader(message, "To")),

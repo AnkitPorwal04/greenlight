@@ -75,4 +75,37 @@ describe("toCalendarLeaves", () => {
   it("drops rows whose start date does not parse", () => {
     expect(toCalendarLeaves([candidate({ fromDate: "next week" })])).toEqual([]);
   });
+
+  it("suppresses a leave whose cancellation has been approved", () => {
+    const rows = [
+      candidate({ id: "leave", status: "approved" }),
+      candidate({ id: "cx", kind: "cancellation", status: "approved" }),
+    ];
+    expect(toCalendarLeaves(rows)).toEqual([]);
+  });
+
+  it("keeps the leave while its cancellation is still pending", () => {
+    const rows = [
+      candidate({ id: "leave", status: "approved" }),
+      candidate({ id: "cx", kind: "cancellation", status: "pending" }),
+    ];
+    expect(toCalendarLeaves(rows).map((l) => l.id)).toEqual(["leave"]);
+  });
+
+  it("keeps the leave when its cancellation was rejected", () => {
+    const rows = [
+      candidate({ id: "leave", status: "approved" }),
+      candidate({ id: "cx", kind: "cancellation", status: "rejected" }),
+    ];
+    expect(toCalendarLeaves(rows).map((l) => l.id)).toEqual(["leave"]);
+  });
+
+  it("only suppresses the matching employee's leave, not others on the same dates", () => {
+    const rows = [
+      candidate({ id: "meera", status: "approved" }),
+      candidate({ id: "asha", employeeCode: "EMP2", status: "approved" }),
+      candidate({ id: "cx", kind: "cancellation", status: "approved" }),
+    ];
+    expect(toCalendarLeaves(rows).map((l) => l.id)).toEqual(["asha"]);
+  });
 });
