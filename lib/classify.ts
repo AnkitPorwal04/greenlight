@@ -32,7 +32,13 @@ export type Classifier = (
 export const RATE_LIMITED_STATUS = 429;
 
 export const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
+export const DEFAULT_MODEL_CHAIN = [
+  DEFAULT_GEMINI_MODEL,
+  "gemini-3.5-flash-lite",
+  "gemini-flash-lite-latest",
+];
 export const CLASSIFY_TIMEOUT_MS = 8000;
+export const MODEL_COOLDOWN_MS = 120000;
 export const MAX_BODY_CHARS = 4000;
 
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -108,6 +114,34 @@ export function isUnclassifiable(
   classification: DirectClassification | null | undefined
 ): boolean {
   return classification?.unclassifiable === true;
+}
+
+export function parseModelChain(raw: string | undefined): string[] {
+  const chain: string[] = [];
+  for (const part of String(raw ?? "").split(",")) {
+    const model = part.trim();
+    if (!model || chain.includes(model)) continue;
+    chain.push(model);
+  }
+  return chain.length > 0 ? chain : [...DEFAULT_MODEL_CHAIN];
+}
+
+const coolingDown = new Map<string, number>();
+
+export function resetModelCooldowns(): void {
+  coolingDown.clear();
+}
+
+function isCoolingDown(model: string): boolean {
+  const until = coolingDown.get(model);
+  if (until === undefined) return false;
+  if (until > Date.now()) return true;
+  coolingDown.delete(model);
+  return false;
+}
+
+function markModelDown(model: string): void {
+  coolingDown.set(model, Date.now() + MODEL_COOLDOWN_MS);
 }
 
 let warned = false;
@@ -209,14 +243,20 @@ function extractText(payload: unknown): string {
     .join("");
 }
 
-export async function classifyMail(
-  input: ClassifyInput,
-  meta?: ClassifyMeta
-): Promise<DirectClassification | null> {
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
-  if (!apiKey) return null;
+type Attempt =
+  | { outcome: "answer"; status: number; classification: DirectClassification }
+  | { outcome: "stop"; status: number }
+  | { outcome: "rotate"; status?: number; rateLimited: boolean };
 
-  const model = process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
+function rotatesOn(status: number): boolean {
+  return status === 404 || status === RATE_LIMITED_STATUS || status >= 500;
+}
+
+async function attemptModel(
+  model: string,
+  input: ClassifyInput,
+  apiKey: string
+): Promise<Attempt> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CLASSIFY_TIMEOUT_MS);
 
@@ -241,24 +281,77 @@ export async function classifyMail(
       }
     );
 
-    if (meta) {
-      meta.status = res.status;
-      meta.rateLimited = res.status === RATE_LIMITED_STATUS;
-    }
-
     if (!res.ok) {
       warnOnce(`HTTP ${res.status} from ${model}`);
-      return null;
+      if (rotatesOn(res.status)) {
+        return {
+          outcome: "rotate",
+          status: res.status,
+          rateLimited: res.status === RATE_LIMITED_STATUS,
+        };
+      }
+      return { outcome: "stop", status: res.status };
     }
 
     const parsed = parseClassification(extractText(await res.json()));
-    if (parsed) return parsed;
+    if (parsed) {
+      return { outcome: "answer", status: res.status, classification: parsed };
+    }
     warnOnce(`no usable answer from ${model}`);
-    return UNCLASSIFIABLE;
+    return {
+      outcome: "answer",
+      status: res.status,
+      classification: UNCLASSIFIABLE,
+    };
   } catch (e) {
     warnOnce(e instanceof Error ? e.message : "request failed");
-    return null;
+    return { outcome: "rotate", rateLimited: false };
   } finally {
     clearTimeout(timer);
   }
+}
+
+export async function classifyMail(
+  input: ClassifyInput,
+  meta?: ClassifyMeta
+): Promise<DirectClassification | null> {
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey) return null;
+
+  let attempts = 0;
+  let rateLimited = 0;
+  let lastStatus: number | undefined;
+
+  for (const model of parseModelChain(process.env.GEMINI_MODEL)) {
+    if (isCoolingDown(model)) continue;
+
+    attempts += 1;
+    const attempt = await attemptModel(model, input, apiKey);
+    if (attempt.status !== undefined) lastStatus = attempt.status;
+
+    if (attempt.outcome === "answer") {
+      if (meta) {
+        meta.status = attempt.status;
+        meta.rateLimited = false;
+      }
+      return attempt.classification;
+    }
+
+    if (attempt.outcome === "stop") {
+      if (meta) {
+        meta.status = attempt.status;
+        meta.rateLimited = false;
+      }
+      return null;
+    }
+
+    if (attempt.rateLimited) rateLimited += 1;
+    markModelDown(model);
+  }
+
+  if (attempts > 0 && meta) {
+    if (lastStatus !== undefined) meta.status = lastStatus;
+    meta.rateLimited = rateLimited === attempts;
+  }
+  return null;
 }

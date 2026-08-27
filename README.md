@@ -99,7 +99,7 @@ Requests match to the directory by employee code, so every reply lands at the *v
 | `GOOGLE_REDIRECT_URI` | No | Override; defaults to `<request-origin>/api/auth/callback` |
 | `LEAVE_MAIL_QUERY` | No | A custom Gmail search, if your HR tool isn't greytHR |
 | `GEMINI_API_KEY` | No | Turns on **Direct requests** — reading leave mail people send you instead of using greytHR. Left unset, the feature stays off |
-| `GEMINI_MODEL` | No | Override; defaults to `gemini-3.1-flash-lite` |
+| `GEMINI_MODEL` | No | Override; a comma-separated fallback chain tried left to right when a model is retired, rate limited, erroring or slow. Defaults to `gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemini-flash-lite-latest`. A single name still works and simply means "no fallback" |
 
 No Redis configured? Data falls back to local `.data/` files — fine for tinkering, but not for production (serverless disks don't stick around).
 
