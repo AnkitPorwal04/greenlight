@@ -38,29 +38,32 @@ describe("dedupeLeaves", () => {
     expect(out[0].leaveType).toBe("Earned");
   });
 
-  it("prefers a decided row over a pending duplicate", () => {
-    const decided = row({ id: "a", status: "approved", receivedAt: "2026-08-20T09:00:00.000Z" });
-    const pending = row({ id: "b", status: "pending", receivedAt: "2026-08-25T09:00:00.000Z" });
+  it("keeps the newest application even when the older copy is decided", () => {
+    const decided = row({ id: "b", status: "approved", receivedAt: "2026-08-20T09:00:00.000Z" });
+    const pending = row({ id: "a", status: "pending", receivedAt: "2026-08-25T09:00:00.000Z" });
     expect(ids(dedupeLeaves([decided, pending]))).toEqual(["a"]);
     expect(ids(dedupeLeaves([pending, decided]))).toEqual(["a"]);
   });
 
-  it("prefers greythr over a direct mail when both are pending", () => {
+  it("keeps the newest application even when it came from a direct mail", () => {
     const direct = row({ id: "a", source: "direct", receivedAt: "2026-08-25T09:00:00.000Z" });
     const greythr = row({ id: "b", source: "greythr", receivedAt: "2026-08-20T09:00:00.000Z" });
-    expect(ids(dedupeLeaves([direct, greythr]))).toEqual(["b"]);
-  });
-
-  it("treats a missing source as greythr", () => {
-    const direct = row({ id: "a", source: "direct" });
-    const unsourced = row({ id: "b" });
-    expect(ids(dedupeLeaves([direct, unsourced]))).toEqual(["b"]);
-  });
-
-  it("prefers a decided direct row over a pending greythr row", () => {
-    const direct = row({ id: "a", source: "direct", status: "handled" });
-    const greythr = row({ id: "b", source: "greythr", status: "pending" });
+    expect(ids(dedupeLeaves([direct, greythr]))).toEqual(["a"]);
     expect(ids(dedupeLeaves([greythr, direct]))).toEqual(["a"]);
+  });
+
+  it("ignores status and source entirely when picking the winner", () => {
+    const older = row({ id: "z", status: "approved", source: "greythr", receivedAt: "2026-08-20T09:00:00.000Z" });
+    const newer = row({ id: "a", status: "pending", source: "direct", receivedAt: "2026-08-21T09:00:00.000Z" });
+    expect(ids(dedupeLeaves([older, newer]))).toEqual(["a"]);
+  });
+
+  it("dedupes a wfh request against a leave for the same span", () => {
+    const leave = { ...row({ id: "a", receivedAt: "2026-08-20T09:00:00.000Z" }), leaveType: "Casual" };
+    const wfh = { ...row({ id: "b", receivedAt: "2026-08-24T09:00:00.000Z" }), leaveType: "WFH" };
+    const out = dedupeLeaves([leave, wfh]);
+    expect(out).toHaveLength(1);
+    expect(out[0].leaveType).toBe("WFH");
   });
 
   it("falls back to the larger id when everything else ties", () => {
@@ -132,7 +135,7 @@ describe("dedupeLeaves", () => {
       row({ id: "b", receivedAt: "2026-08-19T09:00:00.000Z" }),
       row({ id: "c", source: "direct", receivedAt: "2026-08-25T09:00:00.000Z" }),
     ];
-    expect(ids(dedupeLeaves(rows))).toEqual(["b"]);
+    expect(ids(dedupeLeaves(rows))).toEqual(["c"]);
   });
 
   it("returns a new array and leaves the input untouched", () => {

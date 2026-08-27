@@ -21,28 +21,12 @@ function spanKey(row: DedupableRow): string | null {
   return `${code}|${fromYmd}|${toYmd}`;
 }
 
-function decidedRank(status: string): number {
-  return status === "pending" ? 0 : 1;
-}
-
-function sourceRank(source?: string): number {
-  return source === "direct" ? 0 : 1;
-}
-
 function receivedMs(receivedAt?: string): number {
   const ms = Date.parse(receivedAt ?? "");
   return Number.isFinite(ms) ? ms : 0;
 }
 
 function beats(candidate: DedupableRow, current: DedupableRow): boolean {
-  const decided = decidedRank(candidate.status);
-  const decidedCurrent = decidedRank(current.status);
-  if (decided !== decidedCurrent) return decided > decidedCurrent;
-
-  const source = sourceRank(candidate.source);
-  const sourceCurrent = sourceRank(current.source);
-  if (source !== sourceCurrent) return source > sourceCurrent;
-
   const received = receivedMs(candidate.receivedAt);
   const receivedCurrent = receivedMs(current.receivedAt);
   if (received !== receivedCurrent) return received > receivedCurrent;
