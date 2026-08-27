@@ -29,6 +29,7 @@ import {
 import type { LeaveRequest } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const BATCH_SIZE = 40;
 

@@ -1,7 +1,13 @@
 import type { gmail_v1 } from "@googleapis/gmail";
 import { classifyMail } from "./classify";
+import type {
+  Classifier,
+  ClassifyInput,
+  ClassifyMeta,
+  DirectClassification,
+} from "./classify";
 import { buildDirectQueries, classificationToRequest } from "./direct";
-import type { DirectPerson } from "./direct";
+import type { DirectMail, DirectPerson } from "./direct";
 import { loadEmployees } from "./employees";
 import { extractBodyText } from "./parser";
 import {
@@ -15,15 +21,38 @@ import { collectMessageRefs, GMAIL_PAGE_SIZE } from "./gmail-window";
 
 export const DIRECT_MAX_MESSAGES = 100;
 export const DIRECT_BATCH_SIZE = 25;
-export const DIRECT_MAX_NEW_CLASSIFICATIONS = 6;
-export const DIRECT_CLASSIFY_BUDGET_MS = 20000;
-const MAX_CLASSIFY_FAILURES = 2;
+export const DIRECT_MAX_NEW_CLASSIFICATIONS = 40;
+export const DIRECT_CLASSIFY_BUDGET_MS = 45000;
+export const DIRECT_CLASSIFY_CHUNK_SIZE = 5;
 
 export interface DirectFetchContext {
   selfEmail: string;
   team: string[];
   decisions: Record<string, Decision>;
   skipIds?: Set<string>;
+}
+
+export interface ClassifyJob {
+  id: string;
+  input: ClassifyInput;
+}
+
+export interface BurstOptions {
+  budgetMs?: number;
+  maxNew?: number;
+  chunkSize?: number;
+  now?: () => number;
+}
+
+export type SaveClassification = (
+  id: string,
+  classification: DirectClassification
+) => Promise<void>;
+
+interface DirectCandidate {
+  person: DirectPerson;
+  mail: DirectMail;
+  from: string;
 }
 
 function header(msg: gmail_v1.Schema$Message, name: string): string {
@@ -44,6 +73,50 @@ function chunk<T>(items: T[], size: number): T[][] {
     out.push(items.slice(i, i + size));
   }
   return out;
+}
+
+export async function classifyInBursts(
+  jobs: ClassifyJob[],
+  classify: Classifier,
+  save: SaveClassification,
+  options: BurstOptions = {}
+): Promise<Map<string, DirectClassification>> {
+  const budgetMs = options.budgetMs ?? DIRECT_CLASSIFY_BUDGET_MS;
+  const maxNew = options.maxNew ?? DIRECT_MAX_NEW_CLASSIFICATIONS;
+  const chunkSize = Math.max(1, options.chunkSize ?? DIRECT_CLASSIFY_CHUNK_SIZE);
+  const now = options.now ?? Date.now;
+
+  const answers = new Map<string, DirectClassification>();
+  const startedAt = now();
+
+  const batches = chunk(jobs.slice(0, maxNew), chunkSize);
+
+  for (let b = 0; b < batches.length; b += 1) {
+    if (b > 0 && now() - startedAt > budgetMs) break;
+
+    const batch = batches[b];
+    const metas: ClassifyMeta[] = batch.map(() => ({}));
+    const results = await Promise.all(
+      batch.map((job, i) => classify(job.input, metas[i]).catch(() => null))
+    );
+
+    const done: ClassifyJob[] = [];
+    for (let i = 0; i < batch.length; i += 1) {
+      const result = results[i];
+      if (!result) continue;
+      answers.set(batch[i].id, result);
+      done.push(batch[i]);
+    }
+
+    await Promise.all(
+      done.map((job) => save(job.id, answers.get(job.id)!))
+    );
+
+    if (done.length === 0) break;
+    if (metas.some((meta) => meta.rateLimited)) break;
+  }
+
+  return answers;
 }
 
 function directoryByEmail(
@@ -136,52 +209,27 @@ export async function fetchDirectRequests(
     );
 
     const self = ctx.selfEmail.trim().toLowerCase();
-    const startedAt = Date.now();
-    let classified = 0;
-    let failures = 0;
-    const rows: LeaveRequest[] = [];
+    const candidates: DirectCandidate[] = [];
 
     for (const msg of messages) {
       const id = msg.id ?? "";
       if (!id) continue;
 
-      const senderEmail = addresses(header(msg, "From"))[0]?.toLowerCase() ?? "";
+      const from = header(msg, "From");
+      const senderEmail = addresses(from)[0]?.toLowerCase() ?? "";
       const person = byEmail.get(senderEmail);
       if (!person || senderEmail === self) continue;
 
-      const bodyText = extractBodyText(msg);
-      const subject = header(msg, "Subject");
-      const receivedAt = new Date(
-        msg.internalDate ? parseInt(msg.internalDate) : Date.now()
-      ).toISOString();
-
-      let classification = await loadClassification(user, id);
-      if (!classification) {
-        if (failures >= MAX_CLASSIFY_FAILURES) continue;
-        if (classified >= DIRECT_MAX_NEW_CLASSIFICATIONS) continue;
-        if (Date.now() - startedAt > DIRECT_CLASSIFY_BUDGET_MS) continue;
-
-        classified += 1;
-        classification = await classifyMail({
-          subject,
-          from: header(msg, "From"),
-          bodyText,
-          receivedAt,
-        });
-        if (!classification) {
-          failures += 1;
-          continue;
-        }
-        await saveClassification(user, id, classification);
-      }
-
-      const request = classificationToRequest(
-        {
+      candidates.push({
+        person,
+        mail: {
           id,
           threadId: msg.threadId ?? "",
-          subject,
-          bodyText,
-          receivedAt,
+          subject: header(msg, "Subject"),
+          bodyText: extractBodyText(msg),
+          receivedAt: new Date(
+            msg.internalDate ? parseInt(msg.internalDate) : Date.now()
+          ).toISOString(),
           senderEmail,
           recipients: [
             ...addresses(header(msg, "To")),
@@ -189,12 +237,46 @@ export async function fetchDirectRequests(
           ],
           selfEmail: self,
         },
-        person,
-        classification
-      );
+        from,
+      });
+    }
+    if (candidates.length === 0) return [];
+
+    const cached = await Promise.all(
+      candidates.map((c) => loadClassification(user, c.mail.id))
+    );
+
+    const answers = new Map<string, DirectClassification>();
+    candidates.forEach((c, i) => {
+      const hit = cached[i];
+      if (hit) answers.set(c.mail.id, hit);
+    });
+
+    const pending = candidates.filter((c) => !answers.has(c.mail.id));
+    const fresh = await classifyInBursts(
+      pending.map((c) => ({
+        id: c.mail.id,
+        input: {
+          subject: c.mail.subject,
+          from: c.from,
+          bodyText: c.mail.bodyText,
+          receivedAt: c.mail.receivedAt,
+        },
+      })),
+      classifyMail,
+      (id, classification) => saveClassification(user, id, classification)
+    );
+    for (const [id, classification] of fresh) answers.set(id, classification);
+
+    const rows: LeaveRequest[] = [];
+    for (const c of candidates) {
+      const classification = answers.get(c.mail.id);
+      if (!classification) continue;
+
+      const request = classificationToRequest(c.mail, c.person, classification);
       if (!request) continue;
 
-      const decision = ctx.decisions[id];
+      const decision = ctx.decisions[c.mail.id];
       rows.push({
         ...request,
         status: decision?.status ?? "pending",

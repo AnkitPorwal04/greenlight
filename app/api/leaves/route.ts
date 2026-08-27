@@ -57,6 +57,7 @@ function threadHasMyReply(
 }
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const THREAD_BATCH_SIZE = 25;
 

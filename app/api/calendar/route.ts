@@ -22,6 +22,7 @@ import { LEAVE_MAIL_QUERY } from "@/lib/gmail-window";
 import type { CalendarCandidate } from "@/lib/calendar";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const MAX_MESSAGES = 500;
 const BATCH_SIZE = 40;

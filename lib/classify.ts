@@ -19,6 +19,18 @@ export interface ClassifyInput {
   receivedAt?: string;
 }
 
+export interface ClassifyMeta {
+  status?: number;
+  rateLimited?: boolean;
+}
+
+export type Classifier = (
+  input: ClassifyInput,
+  meta?: ClassifyMeta
+) => Promise<DirectClassification | null>;
+
+export const RATE_LIMITED_STATUS = 429;
+
 export const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
 export const CLASSIFY_TIMEOUT_MS = 8000;
 export const MAX_BODY_CHARS = 4000;
@@ -198,7 +210,8 @@ function extractText(payload: unknown): string {
 }
 
 export async function classifyMail(
-  input: ClassifyInput
+  input: ClassifyInput,
+  meta?: ClassifyMeta
 ): Promise<DirectClassification | null> {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) return null;
@@ -227,6 +240,11 @@ export async function classifyMail(
         }),
       }
     );
+
+    if (meta) {
+      meta.status = res.status;
+      meta.rateLimited = res.status === RATE_LIMITED_STATUS;
+    }
 
     if (!res.ok) {
       warnOnce(`HTTP ${res.status} from ${model}`);
