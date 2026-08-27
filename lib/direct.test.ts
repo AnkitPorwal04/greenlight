@@ -10,6 +10,7 @@ import {
 } from "./direct";
 import { parseLeaveDate } from "./leave-dates";
 import { trimDismissed, MAX_DISMISSED } from "./store";
+import { isUnclassifiable, UNCLASSIFIABLE } from "./classify";
 import type { DirectClassification } from "./classify";
 import type { DirectMail, DirectPerson } from "./direct";
 
@@ -337,6 +338,95 @@ describe("classificationToRequest", () => {
         classification({ fromDate: "2026-01-01", toDate: "2099-01-01" })
       )!.numberOfDays
     ).toBe(365);
+  });
+});
+
+describe("classificationToRequest, unclassifiable mail", () => {
+  it("surfaces the mail for review instead of dropping it", () => {
+    const r = classificationToRequest(mail, person, UNCLASSIFIABLE);
+    expect(r).not.toBeNull();
+    expect(r!.id).toBe("msg1");
+    expect(r!.threadId).toBe("thread1");
+    expect(r!.source).toBe("direct");
+    expect(r!.needsReview).toBe(true);
+    expect(r!.status).toBe("pending");
+  });
+
+  it("describes the absence in the neutral way the row renders", () => {
+    const r = classificationToRequest(mail, person, UNCLASSIFIABLE)!;
+    expect(r.kind).toBe("leave");
+    expect(r.leaveType).toBe("Leave");
+    expect(r.fromDate).toBe("");
+    expect(r.toDate).toBe("");
+    expect(r.numberOfDays).toBe(1);
+  });
+
+  it("uses the subject as the reason, falling back to the body", () => {
+    expect(classificationToRequest(mail, person, UNCLASSIFIABLE)!.reason).toBe(
+      "Leave on Thursday"
+    );
+    expect(
+      classificationToRequest({ ...mail, subject: "  " }, person, UNCLASSIFIABLE)!
+        .reason
+    ).toBe("Hi, taking Thursday off for a family function.");
+  });
+
+  it("carries the employee and the reply-all cc list", () => {
+    const r = classificationToRequest(mail, person, UNCLASSIFIABLE)!;
+    expect(r.employeeCode).toBe("GRP1234");
+    expect(r.employeeEmail).toBe("jane.doe@example.com");
+    expect(r.emailVerified).toBe(true);
+    expect(r.ccRecipients).toEqual(["hr@example.com"]);
+    expect(r.bodyText).toBe(mail.bodyText);
+  });
+
+  it("still excludes a sender who is not in the directory", () => {
+    expect(classificationToRequest(mail, null, UNCLASSIFIABLE)).toBeNull();
+  });
+
+  it("outranks the isRequest and confidence gates that would drop it", () => {
+    expect(UNCLASSIFIABLE.isRequest).toBe(false);
+    expect(UNCLASSIFIABLE.confidence).toBe(0);
+    expect(
+      classificationToRequest(
+        mail,
+        person,
+        classification({ isRequest: false, confidence: 0 })
+      )
+    ).toBeNull();
+  });
+
+  it("keeps producing the review row after a cache round trip", () => {
+    const cached = JSON.parse(
+      JSON.stringify(UNCLASSIFIABLE)
+    ) as DirectClassification;
+    expect(isUnclassifiable(cached)).toBe(true);
+    expect(classificationToRequest(mail, person, cached)!.needsReview).toBe(true);
+  });
+
+  it("ignores stray fields on a marked classification", () => {
+    const r = classificationToRequest(
+      mail,
+      person,
+      classification({
+        unclassifiable: true,
+        kind: "cancellation",
+        leaveType: "Sick Leave",
+        confidence: 0.99,
+      })
+    )!;
+    expect(r.kind).toBe("leave");
+    expect(r.leaveType).toBe("Leave");
+    expect(r.fromDate).toBe("");
+    expect(r.needsReview).toBe(true);
+  });
+
+  it("leaves an ordinary answer unmarked", () => {
+    expect(isUnclassifiable(classification())).toBe(false);
+    expect(isUnclassifiable(null)).toBe(false);
+    expect(
+      classificationToRequest(mail, person, classification())!.needsReview
+    ).toBe(false);
   });
 });
 

@@ -1,5 +1,6 @@
 import { EMAIL_RE } from "./email";
 import { formatLeaveDate, inclusiveDayCount } from "./leave-dates";
+import { isUnclassifiable, UNCLASSIFIABLE } from "./classify";
 import type { DirectClassification } from "./classify";
 import type { LeaveRequest } from "./types";
 
@@ -91,15 +92,21 @@ export function classificationToRequest(
   classification: DirectClassification
 ): LeaveRequest | null {
   if (!person) return null;
-  if (!classification.isRequest) return null;
-  if (classification.confidence < DIRECT_FLOOR) return null;
 
-  const fromYmd = classification.fromDate;
-  const toYmd = classification.toDate ?? fromYmd;
+  const unclear = isUnclassifiable(classification);
+  const answer = unclear ? UNCLASSIFIABLE : classification;
+
+  if (!unclear) {
+    if (!answer.isRequest) return null;
+    if (answer.confidence < DIRECT_FLOOR) return null;
+  }
+
+  const fromYmd = answer.fromDate;
+  const toYmd = answer.toDate ?? fromYmd;
   const dated = Boolean(fromYmd && toYmd);
 
   const needsReview =
-    !dated || classification.confidence < DIRECT_CONFIDENT;
+    unclear || !dated || answer.confidence < DIRECT_CONFIDENT;
 
   const numberOfDays = dated
     ? Math.min(DIRECT_MAX_DAYS, inclusiveDayCount(fromYmd!, toYmd!))
@@ -117,7 +124,7 @@ export function classificationToRequest(
     employeeName: person.name || person.email,
     employeeCode: person.code,
     employeeEmail: person.email,
-    leaveType: directLeaveType(classification),
+    leaveType: directLeaveType(answer),
     fromDate: dated ? formatLeaveDate(fromYmd!) : "",
     toDate: dated ? formatLeaveDate(toYmd!) : "",
     numberOfDays,
@@ -130,7 +137,7 @@ export function classificationToRequest(
     emailVerified: true,
     bodyText: mail.bodyText ?? "",
     status: "pending",
-    kind: classification.kind === "cancellation" ? "cancellation" : "leave",
+    kind: answer.kind === "cancellation" ? "cancellation" : "leave",
     source: "direct",
     needsReview,
   };

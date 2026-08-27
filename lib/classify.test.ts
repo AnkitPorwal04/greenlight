@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   buildClassifyPrompt,
+  isUnclassifiable,
   parseClassification,
   MAX_BODY_CHARS,
+  UNCLASSIFIABLE,
 } from "./classify";
 
 function json(value: Record<string, unknown>): string {
@@ -135,6 +137,31 @@ describe("parseClassification", () => {
     expect(
       parseClassification(json({ ...valid, leaveType: "  casual   leave " }))?.leaveType
     ).toBe("casual leave");
+  });
+});
+
+describe("isUnclassifiable", () => {
+  it("marks the answer used when Gemini refuses to answer", () => {
+    expect(isUnclassifiable(UNCLASSIFIABLE)).toBe(true);
+    expect(UNCLASSIFIABLE.isRequest).toBe(false);
+    expect(UNCLASSIFIABLE.fromDate).toBeNull();
+  });
+
+  it("survives being cached and read back", () => {
+    expect(isUnclassifiable(JSON.parse(JSON.stringify(UNCLASSIFIABLE)))).toBe(true);
+  });
+
+  it("never marks a real model answer, even one that claims the flag", () => {
+    expect(parseClassification(json(valid))?.unclassifiable).toBeUndefined();
+    expect(
+      parseClassification(json({ ...valid, unclassifiable: true }))?.unclassifiable
+    ).toBeUndefined();
+    expect(isUnclassifiable(parseClassification(json(valid)))).toBe(false);
+  });
+
+  it("treats a missing answer as not unclassifiable", () => {
+    expect(isUnclassifiable(null)).toBe(false);
+    expect(isUnclassifiable(undefined)).toBe(false);
   });
 });
 

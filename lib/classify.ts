@@ -9,6 +9,7 @@ export interface DirectClassification {
   toDate: string | null;
   leaveType: string | null;
   confidence: number;
+  unclassifiable?: boolean;
 }
 
 export interface ClassifyInput {
@@ -88,7 +89,14 @@ export const UNCLASSIFIABLE: DirectClassification = {
   toDate: null,
   leaveType: null,
   confidence: 0,
+  unclassifiable: true,
 };
+
+export function isUnclassifiable(
+  classification: DirectClassification | null | undefined
+): boolean {
+  return classification?.unclassifiable === true;
+}
 
 let warned = false;
 
