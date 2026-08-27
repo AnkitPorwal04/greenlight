@@ -2,7 +2,7 @@ import { EMAIL_RE } from "./email";
 import { formatLeaveDate, inclusiveDayCount } from "./leave-dates";
 import { isUnclassifiable, UNCLASSIFIABLE } from "./classify";
 import type { DirectClassification } from "./classify";
-import type { LeaveRequest } from "./types";
+import type { Decision, LeaveRequest } from "./types";
 
 export const DIRECT_MAX_ADDRESSES = 40;
 export const DIRECT_CONFIDENT = 0.7;
@@ -140,5 +140,19 @@ export function classificationToRequest(
     kind: answer.kind === "cancellation" ? "cancellation" : "leave",
     source: "direct",
     needsReview,
+  };
+}
+
+export function withDecision(
+  request: LeaveRequest,
+  decision: Decision | undefined
+): LeaveRequest {
+  return {
+    ...request,
+    status: decision?.status ?? "pending",
+    decidedAt: decision?.decidedAt,
+    decisionNote: decision?.note,
+    mailSent: Boolean(decision?.sentTo),
+    needsReview: decision ? false : request.needsReview,
   };
 }
