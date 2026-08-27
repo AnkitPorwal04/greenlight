@@ -10,6 +10,8 @@ export type LeaveStatus =
 // compatible with anything constructed before this field existed).
 export type LeaveKind = "leave" | "cancellation";
 
+export type LeaveSource = "greythr" | "direct";
+
 export interface LeaveRequest {
   id: string;
   threadId: string;
@@ -30,6 +32,8 @@ export interface LeaveRequest {
   bodyText: string;
   status: LeaveStatus;
   kind?: LeaveKind;
+  source?: LeaveSource;
+  needsReview?: boolean;
   decidedAt?: string;
   decisionNote?: string;
   mailSent?: boolean;

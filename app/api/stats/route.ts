@@ -6,12 +6,14 @@ import { parseLeaveMail } from "@/lib/parser";
 import { loadDecisions, loadTeam } from "@/lib/store";
 import { aggregateStatsForTeam, type StatsEntry } from "@/lib/stats";
 import { cancelledLeaveKeys, isLeaveCancelled } from "@/lib/cancellation";
+import { fetchDirectRequests } from "@/lib/direct-fetch";
 import { LEAVE_MAIL_QUERY } from "@/lib/gmail-window";
 
 export const dynamic = "force-dynamic";
 
 const MAX_MESSAGES = 500;
 const BATCH_SIZE = 40;
+const STATS_SINCE = process.env.STATS_SINCE ?? "2026/08/01";
 
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -38,7 +40,7 @@ export async function GET(req: NextRequest) {
       gmail.users.getProfile({ userId: "me" }),
       gmail.users.messages.list({
         userId: "me",
-        q: `${LEAVE_MAIL_QUERY} after:${process.env.STATS_SINCE ?? "2026/08/01"}`,
+        q: `${LEAVE_MAIL_QUERY} after:${STATS_SINCE}`,
         maxResults: MAX_MESSAGES,
       }),
       loadDecisions(user),
@@ -100,6 +102,28 @@ export async function GET(req: NextRequest) {
         leaveType: r.parsed.leaveType,
         numberOfDays: r.parsed.numberOfDays,
         receivedAt: new Date(receivedMs).toISOString(),
+        status: r.status,
+      });
+    }
+
+    const direct = await fetchDirectRequests(gmail, user, STATS_SINCE, {
+      selfEmail,
+      team,
+      decisions,
+      skipIds: new Set(ids),
+    });
+
+    for (const r of direct) {
+      if (r.needsReview) continue;
+      if (r.kind === "cancellation") continue;
+      if (isLeaveCancelled(r, cancelled)) continue;
+      entries.push({
+        id: r.id,
+        employeeName: r.employeeName,
+        employeeCode: r.employeeCode,
+        leaveType: r.leaveType,
+        numberOfDays: r.numberOfDays,
+        receivedAt: r.receivedAt,
         status: r.status,
       });
     }

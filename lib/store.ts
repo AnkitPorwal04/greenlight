@@ -4,6 +4,7 @@ import type { DirectClassification } from "./classify";
 import type { Decision } from "./types";
 
 export const CLASSIFICATION_TTL_SECONDS = 60 * 24 * 60 * 60;
+export const MAX_DISMISSED = 500;
 
 function decisionsKey(email: string) {
   return `decisions:${email.toLowerCase()}`;
@@ -23,6 +24,39 @@ function teamNameKey(email: string) {
 
 function classificationKey(email: string, messageId: string) {
   return `clf:${email.toLowerCase()}:${messageId}`;
+}
+
+function dismissedKey(email: string) {
+  return `dismissed:${email.toLowerCase()}`;
+}
+
+export function trimDismissed(ids: string[]): string[] {
+  const clean = (Array.isArray(ids) ? ids : [])
+    .map((id) => String(id ?? "").trim())
+    .filter(Boolean);
+  const newestFirst = [...clean].reverse();
+  const kept: string[] = [];
+  const seen = new Set<string>();
+  for (const id of newestFirst) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    kept.push(id);
+    if (kept.length >= MAX_DISMISSED) break;
+  }
+  return kept.reverse();
+}
+
+export async function loadDismissed(email: string): Promise<string[]> {
+  const list = await getJSON<string[]>(dismissedKey(email));
+  return trimDismissed(Array.isArray(list) ? list : []);
+}
+
+export async function saveDismissed(
+  email: string,
+  messageId: string
+): Promise<void> {
+  const existing = await loadDismissed(email);
+  await setJSON(dismissedKey(email), trimDismissed([...existing, messageId]));
 }
 
 export async function loadClassification(

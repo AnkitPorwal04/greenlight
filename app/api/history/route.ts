@@ -7,7 +7,8 @@ import { loadDecisions, loadTeam } from "@/lib/store";
 import { loadEmployees } from "@/lib/employees";
 import { filterByTeam } from "@/lib/team";
 import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
-import { historyMonthCount, monthStart } from "@/lib/history";
+import { fetchDirectRequests } from "@/lib/direct-fetch";
+import { gmailAfterDate, historyMonthCount, monthStart } from "@/lib/history";
 import {
   collectMessageRefs,
   windowedQuery,
@@ -115,8 +116,15 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    const direct = await fetchDirectRequests(
+      gmail,
+      user,
+      gmailAfterDate(since),
+      { selfEmail, team, decisions, skipIds: new Set(ids) }
+    );
+
     // Show only people on the manager's team (all, if no team is configured).
-    const visible = filterByTeam(requests, team);
+    const visible = [...filterByTeam(requests, team), ...direct];
     visible.sort(
       (a, b) =>
         new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime()
