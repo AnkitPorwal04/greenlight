@@ -16,6 +16,7 @@ import {
 import { aggregateStatsForTeam, type StatsEntry } from "@/lib/stats";
 import { cancelledLeaveKeys, isLeaveCancelled } from "@/lib/cancellation";
 import { fetchDirectRequests } from "@/lib/direct-fetch";
+import { dedupeLeaves, type DedupableRow } from "@/lib/dedupe";
 import { LEAVE_MAIL_QUERY } from "@/lib/gmail-window";
 
 export const dynamic = "force-dynamic";
@@ -118,8 +119,41 @@ export async function GET(req: NextRequest) {
       }))
     );
 
+    const direct = await fetchDirectRequests(gmail, user, STATS_SINCE, {
+      selfEmail,
+      team,
+      decisions,
+      skipIds: new Set(ids),
+    });
+
+    const dedupeInput: DedupableRow[] = [
+      ...parsedRows.map((r) => ({
+        id: r.id,
+        employeeCode: r.parsed.employeeCode,
+        fromDate: r.parsed.fromDate,
+        toDate: r.parsed.toDate,
+        status: r.status,
+        kind: r.parsed.kind,
+        receivedAt: new Date(r.receivedMs).toISOString(),
+      })),
+      ...direct
+        .filter((r) => !r.needsReview)
+        .map((r) => ({
+          id: r.id,
+          employeeCode: r.employeeCode,
+          fromDate: r.fromDate,
+          toDate: r.toDate,
+          status: r.status,
+          kind: r.kind,
+          source: r.source,
+          receivedAt: r.receivedAt,
+        })),
+    ];
+    const keptIds = new Set(dedupeLeaves(dedupeInput).map((r) => r.id));
+
     const entries: StatsEntry[] = [];
     for (const r of parsedRows) {
+      if (!keptIds.has(r.id)) continue;
       // Cancellation requests are not leaves taken; keep them out of stats.
       if (r.parsed.kind === "cancellation") continue;
       // Neither is a leave the employee later cancelled.
@@ -135,15 +169,9 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const direct = await fetchDirectRequests(gmail, user, STATS_SINCE, {
-      selfEmail,
-      team,
-      decisions,
-      skipIds: new Set(ids),
-    });
-
     for (const r of direct) {
       if (r.needsReview) continue;
+      if (!keptIds.has(r.id)) continue;
       if (r.kind === "cancellation") continue;
       if (isLeaveCancelled(r, cancelled)) continue;
       entries.push({

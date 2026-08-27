@@ -18,8 +18,10 @@ import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
 import { gmailAfterDate, monthStart } from "@/lib/history";
 import { toCalendarLeaves } from "@/lib/calendar";
 import { fetchDirectRequests } from "@/lib/direct-fetch";
+import { dedupeLeaves } from "@/lib/dedupe";
 import { LEAVE_MAIL_QUERY } from "@/lib/gmail-window";
 import type { CalendarCandidate } from "@/lib/calendar";
+import type { DedupableRow } from "@/lib/dedupe";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -120,6 +122,7 @@ export async function GET(req: NextRequest) {
         return {
           id,
           ...entry.m,
+          receivedAt: new Date(entry.t).toISOString(),
           status: decisions[id]?.status ?? "pending",
         };
       })
@@ -131,7 +134,7 @@ export async function GET(req: NextRequest) {
       decisions,
       skipIds: new Set(ids),
     });
-    const directRows: CalendarCandidate[] = direct
+    const directRows: (CalendarCandidate & DedupableRow)[] = direct
       .filter((r) => !r.needsReview)
       .map((r) => ({
         id: r.id,
@@ -143,9 +146,13 @@ export async function GET(req: NextRequest) {
         numberOfDays: r.numberOfDays,
         status: r.status,
         kind: r.kind,
+        source: r.source,
+        receivedAt: r.receivedAt,
       }));
 
-    const leaves = toCalendarLeaves(filterByTeam([...rows, ...directRows], team));
+    const leaves = toCalendarLeaves(
+      dedupeLeaves(filterByTeam([...rows, ...directRows], team))
+    );
     return NextResponse.json({ leaves });
   } catch (e) {
     return NextResponse.json(
