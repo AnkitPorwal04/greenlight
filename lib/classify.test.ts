@@ -1,9 +1,14 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import {
   buildClassifyPrompt,
   classifyMail,
   isUnclassifiable,
   parseClassification,
+  parseModelChain,
+  resetModelCooldowns,
+  CLASSIFY_TIMEOUT_MS,
+  DEFAULT_GEMINI_MODEL,
+  DEFAULT_MODEL_CHAIN,
   MAX_BODY_CHARS,
   UNCLASSIFIABLE,
 } from "./classify";
@@ -12,6 +17,10 @@ import type { ClassifyMeta } from "./classify";
 function json(value: Record<string, unknown>): string {
   return JSON.stringify(value);
 }
+
+beforeEach(() => {
+  resetModelCooldowns();
+});
 
 const valid = {
   isRequest: true,
@@ -264,6 +273,245 @@ describe("classifyMail rate limit reporting", () => {
     const meta: ClassifyMeta = {};
 
     expect(await classifyMail(input, meta)).toBeNull();
+    expect(meta).toEqual({});
+  });
+});
+
+describe("parseModelChain", () => {
+  it("falls back to the built-in chain when nothing is set", () => {
+    expect(parseModelChain(undefined)).toEqual(DEFAULT_MODEL_CHAIN);
+    expect(parseModelChain("")).toEqual(DEFAULT_MODEL_CHAIN);
+    expect(parseModelChain("   ")).toEqual(DEFAULT_MODEL_CHAIN);
+    expect(parseModelChain(",, ,")).toEqual(DEFAULT_MODEL_CHAIN);
+  });
+
+  it("leads the built-in chain with the flash-lite primary", () => {
+    expect(DEFAULT_MODEL_CHAIN[0]).toBe(DEFAULT_GEMINI_MODEL);
+    expect(DEFAULT_MODEL_CHAIN.length).toBeGreaterThan(1);
+  });
+
+  it("reads a single model as a chain of one", () => {
+    expect(parseModelChain("gemini-3.1-flash-lite")).toEqual([
+      "gemini-3.1-flash-lite",
+    ]);
+  });
+
+  it("reads a comma separated list in order", () => {
+    expect(parseModelChain("model-a,model-b,model-c")).toEqual([
+      "model-a",
+      "model-b",
+      "model-c",
+    ]);
+  });
+
+  it("trims spacing and drops blank entries", () => {
+    expect(parseModelChain("  model-a , , model-b ,")).toEqual([
+      "model-a",
+      "model-b",
+    ]);
+  });
+
+  it("keeps only the first mention of a repeated model", () => {
+    expect(parseModelChain("model-a,model-b,model-a")).toEqual([
+      "model-a",
+      "model-b",
+    ]);
+  });
+
+  it("does not hand out the shared default array", () => {
+    const chain = parseModelChain("");
+    chain.push("scribbled-on");
+    expect(parseModelChain("")).toEqual(DEFAULT_MODEL_CHAIN);
+  });
+});
+
+describe("classifyMail model rotation", () => {
+  const input = {
+    subject: "Leave tomorrow",
+    from: "jane@example.com",
+    bodyText: "Taking tomorrow off.",
+  };
+
+  type Reply = { status: number; body?: unknown } | "throw" | "hang";
+
+  const answer = {
+    candidates: [{ content: { parts: [{ text: json(valid) }] } }],
+  };
+
+  let calls: string[] = [];
+
+  function route(replies: Record<string, Reply>) {
+    calls = [];
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: { signal: AbortSignal }) => {
+        const model = decodeURIComponent(
+          url.match(/models\/([^:]+):generateContent/)?.[1] ?? ""
+        );
+        calls.push(model);
+
+        const reply = replies[model] ?? { status: 404 };
+        if (reply === "throw") throw new Error("network down");
+        if (reply === "hang") {
+          return new Promise((_resolve, reject) => {
+            init.signal.addEventListener("abort", () =>
+              reject(new Error("The operation was aborted."))
+            );
+          });
+        }
+        return {
+          ok: reply.status >= 200 && reply.status < 300,
+          status: reply.status,
+          json: async () => reply.body ?? {},
+        };
+      })
+    );
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it("rotates past a rate limited primary to a working backup", async () => {
+    vi.stubEnv("GEMINI_MODEL", "model-a,model-b");
+    route({ "model-a": { status: 429 }, "model-b": { status: 200, body: answer } });
+    const meta: ClassifyMeta = {};
+
+    expect(await classifyMail(input, meta)).toMatchObject({
+      isRequest: true,
+      fromDate: "2026-09-05",
+    });
+    expect(calls).toEqual(["model-a", "model-b"]);
+    expect(meta.status).toBe(200);
+    expect(meta.rateLimited).toBe(false);
+  });
+
+  it("rotates past a retired model that answers 404", async () => {
+    vi.stubEnv("GEMINI_MODEL", "model-a,model-b");
+    route({ "model-a": { status: 404 }, "model-b": { status: 200, body: answer } });
+
+    expect(await classifyMail(input)).toMatchObject({ isRequest: true });
+    expect(calls).toEqual(["model-a", "model-b"]);
+  });
+
+  it("rotates past a server error", async () => {
+    vi.stubEnv("GEMINI_MODEL", "model-a,model-b");
+    route({ "model-a": { status: 503 }, "model-b": { status: 200, body: answer } });
+
+    expect(await classifyMail(input)).toMatchObject({ isRequest: true });
+    expect(calls).toEqual(["model-a", "model-b"]);
+  });
+
+  it("rotates past a network failure", async () => {
+    vi.stubEnv("GEMINI_MODEL", "model-a,model-b");
+    route({ "model-a": "throw", "model-b": { status: 200, body: answer } });
+
+    expect(await classifyMail(input)).toMatchObject({ isRequest: true });
+    expect(calls).toEqual(["model-a", "model-b"]);
+  });
+
+  it("rotates past a primary that never answers in time", async () => {
+    vi.stubEnv("GEMINI_MODEL", "model-a,model-b");
+    route({ "model-a": "hang", "model-b": { status: 200, body: answer } });
+    vi.useFakeTimers();
+
+    try {
+      const pending = classifyMail(input);
+      await vi.advanceTimersByTimeAsync(CLASSIFY_TIMEOUT_MS);
+      expect(await pending).toMatchObject({ isRequest: true });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(calls).toEqual(["model-a", "model-b"]);
+  });
+
+  it("gives up only once the whole chain is exhausted", async () => {
+    vi.stubEnv("GEMINI_MODEL", "model-a,model-b,model-c");
+    route({
+      "model-a": { status: 429 },
+      "model-b": { status: 429 },
+      "model-c": { status: 429 },
+    });
+    const meta: ClassifyMeta = {};
+
+    expect(await classifyMail(input, meta)).toBeNull();
+    expect(calls).toEqual(["model-a", "model-b", "model-c"]);
+    expect(meta.status).toBe(429);
+    expect(meta.rateLimited).toBe(true);
+  });
+
+  it("only calls it a rate limit when every model was rate limited", async () => {
+    vi.stubEnv("GEMINI_MODEL", "model-a,model-b");
+    route({ "model-a": { status: 429 }, "model-b": { status: 500 } });
+    const meta: ClassifyMeta = {};
+
+    expect(await classifyMail(input, meta)).toBeNull();
+    expect(meta.status).toBe(500);
+    expect(meta.rateLimited).toBe(false);
+  });
+
+  it("stops at a bad request instead of rotating", async () => {
+    vi.stubEnv("GEMINI_MODEL", "model-a,model-b");
+    route({ "model-a": { status: 400 }, "model-b": { status: 200, body: answer } });
+    const meta: ClassifyMeta = {};
+
+    expect(await classifyMail(input, meta)).toBeNull();
+    expect(calls).toEqual(["model-a"]);
+    expect(meta.status).toBe(400);
+    expect(meta.rateLimited).toBe(false);
+  });
+
+  it("treats a blocked answer as an answer rather than rotating", async () => {
+    vi.stubEnv("GEMINI_MODEL", "model-a,model-b");
+    route({
+      "model-a": { status: 200, body: { candidates: [{ content: { parts: [] } }] } },
+      "model-b": { status: 200, body: answer },
+    });
+    const meta: ClassifyMeta = {};
+
+    const result = await classifyMail(input, meta);
+    expect(isUnclassifiable(result)).toBe(true);
+    expect(calls).toEqual(["model-a"]);
+    expect(meta.status).toBe(200);
+    expect(meta.rateLimited).toBe(false);
+  });
+
+  it("skips a model already known to be down for the rest of the run", async () => {
+    vi.stubEnv("GEMINI_MODEL", "model-a,model-b");
+    route({ "model-a": { status: 429 }, "model-b": { status: 200, body: answer } });
+
+    expect(await classifyMail(input)).toMatchObject({ isRequest: true });
+    expect(calls).toEqual(["model-a", "model-b"]);
+
+    calls.length = 0;
+    expect(await classifyMail(input)).toMatchObject({ isRequest: true });
+    expect(calls).toEqual(["model-b"]);
+  });
+
+  it("asks the dead model again once the cooldown is cleared", async () => {
+    vi.stubEnv("GEMINI_MODEL", "model-a,model-b");
+    route({ "model-a": { status: 429 }, "model-b": { status: 200, body: answer } });
+
+    await classifyMail(input);
+    resetModelCooldowns();
+
+    calls.length = 0;
+    expect(await classifyMail(input)).toMatchObject({ isRequest: true });
+    expect(calls).toEqual(["model-a", "model-b"]);
+  });
+
+  it("reports nothing when every model in the chain is cooling down", async () => {
+    vi.stubEnv("GEMINI_MODEL", "model-a,model-b");
+    route({ "model-a": { status: 429 }, "model-b": { status: 429 } });
+
+    expect(await classifyMail(input)).toBeNull();
+
+    calls.length = 0;
+    const meta: ClassifyMeta = {};
+    expect(await classifyMail(input, meta)).toBeNull();
+    expect(calls).toEqual([]);
     expect(meta).toEqual({});
   });
 });
