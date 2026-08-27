@@ -21,6 +21,7 @@ import { loadEmployees } from "@/lib/employees";
 import { filterByTeam } from "@/lib/team";
 import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
 import { fetchDirectRequests } from "@/lib/direct-fetch";
+import { dedupeLeaves } from "@/lib/dedupe";
 import { gmailAfterDate } from "@/lib/history";
 import {
   collectMessageRefs,
@@ -219,7 +220,7 @@ export async function GET(req: NextRequest) {
     );
 
     // Show only people on the manager's team (all, if no team is configured).
-    const visible = [...filterByTeam(requests, team), ...direct];
+    const visible = dedupeLeaves([...filterByTeam(requests, team), ...direct]);
     visible.sort(
       (a, b) =>
         new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime(),
