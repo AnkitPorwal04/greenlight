@@ -1,6 +1,9 @@
 import { delKey, getJSON, setJSON } from "./storage";
 import { normalizeTeamName } from "./team-name";
+import type { DirectClassification } from "./classify";
 import type { Decision } from "./types";
+
+export const CLASSIFICATION_TTL_SECONDS = 60 * 24 * 60 * 60;
 
 function decisionsKey(email: string) {
   return `decisions:${email.toLowerCase()}`;
@@ -16,6 +19,33 @@ function teamKey(email: string) {
 
 function teamNameKey(email: string) {
   return `teamname:${email.toLowerCase()}`;
+}
+
+function classificationKey(email: string, messageId: string) {
+  return `clf:${email.toLowerCase()}:${messageId}`;
+}
+
+export async function loadClassification(
+  email: string,
+  messageId: string
+): Promise<DirectClassification | null> {
+  const stored = await getJSON<DirectClassification>(
+    classificationKey(email, messageId)
+  );
+  if (!stored || typeof stored.isRequest !== "boolean") return null;
+  return stored;
+}
+
+export async function saveClassification(
+  email: string,
+  messageId: string,
+  classification: DirectClassification
+): Promise<void> {
+  await setJSON(
+    classificationKey(email, messageId),
+    classification,
+    CLASSIFICATION_TTL_SECONDS
+  );
 }
 
 // A manager's team is a per-user set of employee codes (uppercased). An empty
