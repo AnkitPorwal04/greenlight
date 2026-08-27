@@ -1,11 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   buildClassifyPrompt,
+  classifyMail,
   isUnclassifiable,
   parseClassification,
   MAX_BODY_CHARS,
   UNCLASSIFIABLE,
 } from "./classify";
+import type { ClassifyMeta } from "./classify";
 
 function json(value: Record<string, unknown>): string {
   return JSON.stringify(value);
@@ -193,5 +195,75 @@ describe("buildClassifyPrompt", () => {
       receivedAt: "not a date",
     });
     expect(prompt).not.toContain("Received:");
+  });
+});
+
+describe("classifyMail rate limit reporting", () => {
+  const input = {
+    subject: "Leave tomorrow",
+    from: "jane@example.com",
+    bodyText: "Taking tomorrow off.",
+  };
+
+  function respond(status: number, body: unknown = {}) {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: status >= 200 && status < 300,
+        status,
+        json: async () => body,
+      }))
+    );
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it("flags a 429 so the caller can stop bursting", async () => {
+    respond(429);
+    const meta: ClassifyMeta = {};
+
+    expect(await classifyMail(input, meta)).toBeNull();
+    expect(meta.status).toBe(429);
+    expect(meta.rateLimited).toBe(true);
+  });
+
+  it("does not mistake an ordinary server error for a rate limit", async () => {
+    respond(500);
+    const meta: ClassifyMeta = {};
+
+    expect(await classifyMail(input, meta)).toBeNull();
+    expect(meta.status).toBe(500);
+    expect(meta.rateLimited).toBe(false);
+  });
+
+  it("reports a healthy call as not rate limited", async () => {
+    respond(200, {
+      candidates: [{ content: { parts: [{ text: json(valid) }] } }],
+    });
+    const meta: ClassifyMeta = {};
+
+    expect(await classifyMail(input, meta)).toMatchObject({
+      isRequest: true,
+      fromDate: "2026-09-05",
+    });
+    expect(meta.status).toBe(200);
+    expect(meta.rateLimited).toBe(false);
+  });
+
+  it("keeps working for callers that pass no meta at all", async () => {
+    respond(429);
+    expect(await classifyMail(input)).toBeNull();
+  });
+
+  it("leaves the meta untouched when there is no API key", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "");
+    const meta: ClassifyMeta = {};
+
+    expect(await classifyMail(input, meta)).toBeNull();
+    expect(meta).toEqual({});
   });
 });
