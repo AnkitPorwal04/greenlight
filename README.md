@@ -98,6 +98,8 @@ Requests match to the directory by employee code, so every reply lands at the *v
 | `UPSTASH_REDIS_REST_TOKEN` | Production | Same idea (`KV_REST_API_TOKEN` works too) |
 | `GOOGLE_REDIRECT_URI` | No | Override; defaults to `<request-origin>/api/auth/callback` |
 | `LEAVE_MAIL_QUERY` | No | A custom Gmail search, if your HR tool isn't greytHR |
+| `GEMINI_API_KEY` | No | Turns on **Direct requests** — reading leave mail people send you instead of using greytHR. Left unset, the feature stays off |
+| `GEMINI_MODEL` | No | Override; defaults to `gemini-3.1-flash-lite` |
 
 No Redis configured? Data falls back to local `.data/` files — fine for tinkering, but not for production (serverless disks don't stick around).
 
@@ -115,9 +117,12 @@ app/
     leaves/       Fetch + parse greytHR threads, auto-detect the ones you handled
     decide/       Compose and send the reply — atomic, with no duplicate sends
     mark/         Record things you handled elsewhere
+    dismiss/      Forget a direct mail that was never a leave request
     employees/    Read/update the directory
 lib/
   parser.ts       greytHR mail → structured request (regular leave + Restricted Holiday)
+  classify.ts     Gemini reads a free-form mail: is this a leave request, and when?
+  direct.ts       Direct-mail search + the classification → request mapping
   compose.ts      The reply template (shared client/server, so the preview matches)
   mailer.ts       RFC 2047 headers, threading, signature, the actual Gmail send
   session.ts      HMAC-signed per-user identity cookie

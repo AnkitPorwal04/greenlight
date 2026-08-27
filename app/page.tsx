@@ -392,6 +392,32 @@ export default function Home() {
     [reload, releaseBusy]
   );
 
+  const dismissRequest = useCallback(
+    async (r: LeaveRequest) => {
+      setBusyIds((prev) => [...new Set([...prev, r.id])]);
+      try {
+        const res = await fetch("/api/dismiss", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: r.id }),
+        });
+        if (!res.ok) {
+          setToast({ message: "Failed to dismiss", tone: "error" });
+          return;
+        }
+        setToast({ message: "Dismissed — not a leave request", tone: "success" });
+        setExiting((prev) => [...new Set([...prev, r.id])]);
+        await wait(EXIT_MS);
+        await reload();
+      } catch {
+        setToast({ message: "Network error", tone: "error" });
+      } finally {
+        releaseBusy([r.id]);
+      }
+    },
+    [reload, releaseBusy]
+  );
+
   const markAllHandled = () => {
     setConfirmClearAll(false);
     recordOutcome(pending.map((r) => r.id));
@@ -904,6 +930,11 @@ export default function Home() {
                                 onMark={() => setOutcomeFor(r)}
                                 onUndo={() => undoDecision(r)}
                                 onViewEmail={() => setEmailModal(r)}
+                                onDismiss={
+                                  r.source === "direct"
+                                    ? () => dismissRequest(r)
+                                    : undefined
+                                }
                               />
                             ))}
                           </div>

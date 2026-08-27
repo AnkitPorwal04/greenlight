@@ -8,7 +8,9 @@ import { filterByTeam } from "@/lib/team";
 import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
 import { gmailAfterDate, monthStart } from "@/lib/history";
 import { toCalendarLeaves } from "@/lib/calendar";
+import { fetchDirectRequests } from "@/lib/direct-fetch";
 import { LEAVE_MAIL_QUERY } from "@/lib/gmail-window";
+import type { CalendarCandidate } from "@/lib/calendar";
 
 export const dynamic = "force-dynamic";
 
@@ -97,7 +99,27 @@ export async function GET(req: NextRequest) {
       })
       .filter((r): r is NonNullable<typeof r> => r !== null);
 
-    const leaves = toCalendarLeaves(filterByTeam(rows, team));
+    const direct = await fetchDirectRequests(gmail, user, gmailAfterDate(since), {
+      selfEmail,
+      team,
+      decisions,
+      skipIds: new Set(ids),
+    });
+    const directRows: CalendarCandidate[] = direct
+      .filter((r) => !r.needsReview)
+      .map((r) => ({
+        id: r.id,
+        employeeName: r.employeeName,
+        employeeCode: r.employeeCode,
+        leaveType: r.leaveType,
+        fromDate: r.fromDate,
+        toDate: r.toDate,
+        numberOfDays: r.numberOfDays,
+        status: r.status,
+        kind: r.kind,
+      }));
+
+    const leaves = toCalendarLeaves(filterByTeam([...rows, ...directRows], team));
     return NextResponse.json({ leaves });
   } catch (e) {
     return NextResponse.json(

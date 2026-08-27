@@ -4,6 +4,7 @@ import { getUserFromRequest } from "@/lib/session";
 import { sendDecisionMail } from "@/lib/mailer";
 import { saveDecision, loadDecisions, deleteDecision } from "@/lib/store";
 import { loadEmployees } from "@/lib/employees";
+import { replyAllCc } from "@/lib/direct";
 import type { LeaveRequest } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -70,6 +71,18 @@ export async function POST(req: NextRequest) {
   const dirEmail = employees[request.employeeCode?.toUpperCase() ?? ""]?.email;
   const recipientTrusted =
     !!dirEmail && dirEmail.toLowerCase() === to.trim().toLowerCase();
+
+  const isDirect = request.source === "direct";
+  if (isDirect && !recipientTrusted) {
+    return NextResponse.json(
+      {
+        error: "unverified_recipient",
+        message:
+          "A direct request can only be answered at the address in your employee directory.",
+      },
+      { status: 400 }
+    );
+  }
   if (!recipientTrusted && body.confirmed !== true) {
     return NextResponse.json(
       {
@@ -81,7 +94,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const cc = cleanCc(body.cc);
+  const cc = isDirect ? replyAllCc(body.cc, user, to) : cleanCc(body.cc);
 
   // Idempotency guard: a request that was already approved/rejected has already
   // had its mail sent — never send a second one (double-click, stale tab, retry).

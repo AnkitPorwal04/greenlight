@@ -9,6 +9,11 @@ const MONTHS: Record<string, number> = {
   jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
 };
 
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
 function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
@@ -35,6 +40,22 @@ export function parseLeaveDate(value: string): string | null {
   const year = Number(m[3]);
   if (month === undefined || !isRealDate(year, month, day)) return null;
   return toYmd(year, month, day);
+}
+
+export function formatLeaveDate(ymd: string): string {
+  const m = ymd?.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m || !isRealDate(Number(m[1]), Number(m[2]) - 1, Number(m[3]))) return "";
+  return `${m[3]} ${MONTH_NAMES[Number(m[2]) - 1]} ${m[1]}`;
+}
+
+export function inclusiveDayCount(fromYmd: string, toYmd: string): number {
+  const [fy, fm, fd] = fromYmd.split("-").map(Number);
+  const [ty, tm, td] = toYmd.split("-").map(Number);
+  const start = Date.UTC(fy, fm - 1, fd);
+  const end = Date.UTC(ty, tm - 1, td);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 1;
+  const span = Math.abs(end - start) / 86400000 + 1;
+  return Math.max(1, Math.round(span));
 }
 
 /** Today's local date as "YYYY-MM-DD". */

@@ -63,6 +63,7 @@ export function RequestRow({
   onMark,
   onUndo,
   onViewEmail,
+  onDismiss,
   onSelect,
 }: {
   request: LeaveRequest;
@@ -74,12 +75,14 @@ export function RequestRow({
   onMark: () => void;
   onUndo: () => void;
   onViewEmail: () => void;
+  onDismiss?: () => void;
   onSelect?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const isPending = r.status === "pending";
   const reason = r.reason?.trim() || "No reason provided.";
   const type = r.leaveType || "Leave";
+  const canDismiss = Boolean(isPending && r.needsReview && onDismiss);
 
   return (
     <article
@@ -123,6 +126,22 @@ export function RequestRow({
                 className="inline-flex shrink-0 items-center rounded border border-[var(--c-amber)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--c-amber)]"
               >
                 Cancellation
+              </span>
+            )}
+            {r.source === "direct" && (
+              <span
+                title="Emailed to you directly instead of through greytHR"
+                className="inline-flex shrink-0 items-center rounded border border-[var(--border-strong)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]"
+              >
+                Direct
+              </span>
+            )}
+            {r.needsReview && (
+              <span
+                title="Read the original mail before deciding — the details here are a best guess"
+                className="inline-flex shrink-0 items-center rounded border border-[var(--c-amber)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--c-amber)]"
+              >
+                Needs review
               </span>
             )}
             {isPending && !r.emailVerified && (
@@ -304,6 +323,16 @@ export function RequestRow({
               Handled
               <Key>H</Key>
             </button>
+            {canDismiss && (
+              <button
+                onClick={onDismiss}
+                disabled={busy}
+                title="Not a leave request — hide it and stop offering it"
+                className="press inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium text-[var(--text-muted)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)] disabled:opacity-50"
+              >
+                Not a request
+              </button>
+            )}
             <button
               onClick={onViewEmail}
               aria-label="View original email"
@@ -372,6 +401,18 @@ export function RequestRow({
             className="press inline-flex h-10 shrink-0 items-center justify-center rounded-md border border-[var(--border)] bg-[var(--surface-sunken)] px-3 text-[13px] font-medium text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] disabled:opacity-50"
           >
             Handled
+          </button>
+        </div>
+      )}
+
+      {canDismiss && (
+        <div className="mt-2 flex sm:hidden">
+          <button
+            onClick={onDismiss}
+            disabled={busy}
+            className="press inline-flex h-10 w-full items-center justify-center rounded-md border border-[var(--border)] text-[13px] font-medium text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] disabled:opacity-50"
+          >
+            Not a request
           </button>
         </div>
       )}
