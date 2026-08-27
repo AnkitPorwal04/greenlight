@@ -6,7 +6,11 @@ import type {
   ClassifyMeta,
   DirectClassification,
 } from "./classify";
-import { buildDirectQueries, classificationToRequest } from "./direct";
+import {
+  buildDirectQueries,
+  classificationToRequest,
+  withDecision,
+} from "./direct";
 import type { DirectMail, DirectPerson } from "./direct";
 import { loadEmployees } from "./employees";
 import { extractBodyText } from "./parser";
@@ -276,14 +280,7 @@ export async function fetchDirectRequests(
       const request = classificationToRequest(c.mail, c.person, classification);
       if (!request) continue;
 
-      const decision = ctx.decisions[c.mail.id];
-      rows.push({
-        ...request,
-        status: decision?.status ?? "pending",
-        decidedAt: decision?.decidedAt,
-        decisionNote: decision?.note,
-        mailSent: Boolean(decision?.sentTo),
-      });
+      rows.push(withDecision(request, ctx.decisions[c.mail.id]));
     }
 
     return filterByTeam(rows, ctx.team);

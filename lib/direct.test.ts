@@ -6,8 +6,10 @@ import {
   cleanDirectAddresses,
   directLeaveType,
   replyAllCc,
+  withDecision,
   DIRECT_MAX_ADDRESSES,
 } from "./direct";
+import { splitDayLeaves, toCalendarLeaves } from "./calendar";
 import { parseLeaveDate } from "./leave-dates";
 import { trimDismissed, MAX_DISMISSED } from "./store";
 import { isUnclassifiable, UNCLASSIFIABLE } from "./classify";
@@ -427,6 +429,140 @@ describe("classificationToRequest, unclassifiable mail", () => {
     expect(
       classificationToRequest(mail, person, classification())!.needsReview
     ).toBe(false);
+  });
+});
+
+describe("withDecision", () => {
+  const flagged = () =>
+    classificationToRequest(mail, person, classification({ confidence: 0.5 }))!;
+
+  it("clears the review flag once the manager has approved", () => {
+    const r = withDecision(flagged(), {
+      status: "approved",
+      decidedAt: "2026-09-05T09:00:00.000Z",
+    });
+    expect(r.status).toBe("approved");
+    expect(r.needsReview).toBe(false);
+  });
+
+  it("clears the review flag for every recorded decision", () => {
+    for (const status of ["approved", "rejected", "handled", "withdrawn"] as const) {
+      const r = withDecision(flagged(), {
+        status,
+        decidedAt: "2026-09-05T09:00:00.000Z",
+      });
+      expect(r.status).toBe(status);
+      expect(r.needsReview).toBe(false);
+    }
+  });
+
+  it("keeps the review flag while nobody has decided", () => {
+    const r = withDecision(flagged(), undefined);
+    expect(r.status).toBe("pending");
+    expect(r.needsReview).toBe(true);
+  });
+
+  it("leaves an unflagged undecided row unflagged", () => {
+    const clean = classificationToRequest(mail, person, classification())!;
+    expect(clean.needsReview).toBe(false);
+    const r = withDecision(clean, undefined);
+    expect(r.status).toBe("pending");
+    expect(r.needsReview).toBe(false);
+  });
+
+  it("maps the decision fields onto the row", () => {
+    const r = withDecision(flagged(), {
+      status: "approved",
+      decidedAt: "2026-09-05T09:00:00.000Z",
+      note: "Enjoy the break",
+      sentTo: "jane.doe@example.com",
+    });
+    expect(r.decidedAt).toBe("2026-09-05T09:00:00.000Z");
+    expect(r.decisionNote).toBe("Enjoy the break");
+    expect(r.mailSent).toBe(true);
+  });
+
+  it("reports no mail sent when the reply never went out", () => {
+    const r = withDecision(flagged(), {
+      status: "rejected",
+      decidedAt: "2026-09-05T09:00:00.000Z",
+    });
+    expect(r.decisionNote).toBeUndefined();
+    expect(r.mailSent).toBe(false);
+  });
+
+  it("blanks the decision fields on an undecided row", () => {
+    const r = withDecision(flagged(), undefined);
+    expect(r.decidedAt).toBeUndefined();
+    expect(r.decisionNote).toBeUndefined();
+    expect(r.mailSent).toBe(false);
+  });
+
+  it("keeps the rest of the row untouched", () => {
+    const before = flagged();
+    const after = withDecision(before, {
+      status: "approved",
+      decidedAt: "2026-09-05T09:00:00.000Z",
+    });
+    expect(after.id).toBe(before.id);
+    expect(after.employeeName).toBe(before.employeeName);
+    expect(after.fromDate).toBe(before.fromDate);
+    expect(after.toDate).toBe(before.toDate);
+    expect(after.numberOfDays).toBe(before.numberOfDays);
+    expect(after.leaveType).toBe(before.leaveType);
+    expect(before.needsReview).toBe(true);
+  });
+});
+
+describe("an approved work-from-home mail reaches the calendar", () => {
+  it("shows the person on the day the manager approved", () => {
+    const wfh = classificationToRequest(
+      mail,
+      person,
+      classification({
+        kind: "wfh",
+        fromDate: "2026-09-10",
+        toDate: "2026-09-10",
+        confidence: 0.5,
+      })
+    )!;
+    expect(wfh.needsReview).toBe(true);
+    expect(wfh.leaveType).toBe("Work From Home");
+
+    const decided = withDecision(wfh, {
+      status: "approved",
+      decidedAt: "2026-09-05T09:00:00.000Z",
+      sentTo: "jane.doe@example.com",
+    });
+    expect(decided.needsReview).toBe(false);
+
+    const visible = [decided].filter((r) => !r.needsReview);
+    expect(visible).toHaveLength(1);
+
+    const leaves = toCalendarLeaves(visible);
+    expect(leaves).toHaveLength(1);
+    expect(leaves[0].fromYmd).toBe("2026-09-10");
+
+    const day = splitDayLeaves(leaves, "2026-09-10");
+    expect(day.approved.map((l) => l.employeeName)).toEqual(["Jane Doe"]);
+    expect(day.pending).toHaveLength(0);
+    expect(day.total).toBe(1);
+  });
+
+  it("stayed invisible before the flag was cleared", () => {
+    const wfh = classificationToRequest(
+      mail,
+      person,
+      classification({
+        kind: "wfh",
+        fromDate: "2026-09-10",
+        toDate: "2026-09-10",
+        confidence: 0.5,
+      })
+    )!;
+    const stillFlagged = { ...wfh, status: "approved" as const };
+    expect(stillFlagged.needsReview).toBe(true);
+    expect([stillFlagged].filter((r) => !r.needsReview)).toHaveLength(0);
   });
 });
 
