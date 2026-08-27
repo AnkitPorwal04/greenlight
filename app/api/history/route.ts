@@ -1,9 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { gmail_v1 } from "@googleapis/gmail";
 import { getAuthorizedClient, getGmail } from "@/lib/google";
 import { getUserFromRequest } from "@/lib/session";
 import { parseLeaveMail, extractBodyText } from "@/lib/parser";
-import { loadDecisions, loadTeam } from "@/lib/store";
+import {
+  loadDecisions,
+  loadMailCache,
+  saveMailCache,
+  loadTeam,
+} from "@/lib/store";
+import {
+  buildLeaveRequest,
+  cacheEntryFromParsed,
+  partitionCached,
+  pruneMailCache,
+} from "@/lib/mail-cache";
 import { loadEmployees } from "@/lib/employees";
 import { filterByTeam } from "@/lib/team";
 import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
@@ -57,63 +67,62 @@ export async function GET(req: NextRequest) {
 
   try {
     const gmail = getGmail(client);
-    const [profile, listed, decisions, employees, team] = await Promise.all([
-      gmail.users.getProfile({ userId: "me" }),
-      collectMessageRefs(HISTORY_MAX_MESSAGES, async (pageToken) => {
-        const page = await gmail.users.messages.list({
-          userId: "me",
-          q: windowedQuery(LEAVE_MAIL_QUERY, since),
-          maxResults: GMAIL_PAGE_SIZE,
-          pageToken,
-        });
-        return {
-          refs: (page.data.messages ?? []).map((m) => ({ id: m.id ?? "" })),
-          nextPageToken: page.data.nextPageToken ?? undefined,
-        };
-      }),
-      loadDecisions(user),
-      loadEmployees(),
-      loadTeam(user),
-    ]);
+    const [profile, listed, decisions, employees, team, mailCache] =
+      await Promise.all([
+        gmail.users.getProfile({ userId: "me" }),
+        collectMessageRefs(HISTORY_MAX_MESSAGES, async (pageToken) => {
+          const page = await gmail.users.messages.list({
+            userId: "me",
+            q: windowedQuery(LEAVE_MAIL_QUERY, since),
+            maxResults: GMAIL_PAGE_SIZE,
+            pageToken,
+          });
+          return {
+            refs: (page.data.messages ?? []).map((m) => ({ id: m.id ?? "" })),
+            nextPageToken: page.data.nextPageToken ?? undefined,
+          };
+        }),
+        loadDecisions(user),
+        loadEmployees(),
+        loadTeam(user),
+        loadMailCache(user),
+      ]);
 
     const selfEmail = profile.data.emailAddress ?? "";
     const ids = listed.refs.map((r) => r.id);
+    const { missing } = partitionCached(ids, mailCache);
 
-    const messages: gmail_v1.Schema$Message[] = [];
-    for (const batch of chunk(ids, BATCH_SIZE)) {
+    let cached = 0;
+    for (const batch of chunk(missing, BATCH_SIZE)) {
       const fetched = await Promise.all(
         batch.map((id) =>
           gmail.users.messages.get({ userId: "me", id, format: "full" })
         )
       );
-      for (const res of fetched) messages.push(res.data);
+      for (const res of fetched) {
+        const msg = res.data;
+        const id = msg.id ?? "";
+        if (!id) continue;
+        mailCache.entries[id] = cacheEntryFromParsed(
+          parseLeaveMail(msg, selfEmail),
+          msg.internalDate ? parseInt(msg.internalDate) : Date.now(),
+          msg.threadId ?? "",
+          extractBodyText(msg)
+        );
+        cached += 1;
+      }
+    }
+
+    if (cached > 0) {
+      await saveMailCache(user, pruneMailCache(mailCache, Date.now()));
     }
 
     const requests: LeaveRequest[] = [];
-    for (const msg of messages) {
-      const parsed = parseLeaveMail(msg, selfEmail);
-      if (!parsed) continue;
-
-      const id = msg.id ?? "";
-      const directoryEntry = employees[parsed.employeeCode.toUpperCase()];
-      const decision = decisions[id];
-      const receivedMs = msg.internalDate
-        ? parseInt(msg.internalDate)
-        : Date.now();
-
-      requests.push({
-        id,
-        threadId: msg.threadId ?? "",
-        ...parsed,
-        employeeEmail: directoryEntry?.email ?? parsed.employeeEmail,
-        emailVerified: Boolean(directoryEntry),
-        bodyText: extractBodyText(msg),
-        receivedAt: new Date(receivedMs).toISOString(),
-        status: decision?.status ?? "pending",
-        decidedAt: decision?.decidedAt,
-        decisionNote: decision?.note,
-        mailSent: Boolean(decision?.sentTo),
-      });
+    for (const id of ids) {
+      const entry = mailCache.entries[id];
+      if (!entry) continue;
+      const request = buildLeaveRequest(id, entry, employees, decisions);
+      if (request) requests.push(request);
     }
 
     const direct = await fetchDirectRequests(

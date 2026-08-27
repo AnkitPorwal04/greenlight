@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { gmail_v1 } from "@googleapis/gmail";
 import { getAuthorizedClient, getGmail } from "@/lib/google";
 import { getUserFromRequest } from "@/lib/session";
-import { parseLeaveMail } from "@/lib/parser";
-import { loadDecisions, loadTeam } from "@/lib/store";
+import { parseLeaveMail, extractBodyText } from "@/lib/parser";
+import {
+  loadDecisions,
+  loadMailCache,
+  saveMailCache,
+  loadTeam,
+} from "@/lib/store";
+import {
+  cacheEntryFromParsed,
+  partitionCached,
+  pruneMailCache,
+} from "@/lib/mail-cache";
 import { filterByTeam } from "@/lib/team";
 import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
 import { gmailAfterDate, monthStart } from "@/lib/history";
@@ -54,7 +63,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const gmail = getGmail(client);
-    const [profile, list, decisions, team] = await Promise.all([
+    const [profile, list, decisions, team, mailCache] = await Promise.all([
       gmail.users.getProfile({ userId: "me" }),
       gmail.users.messages.list({
         userId: "me",
@@ -63,6 +72,7 @@ export async function GET(req: NextRequest) {
       }),
       loadDecisions(user),
       loadTeam(user),
+      loadMailCache(user),
     ]);
 
     const selfEmail = profile.data.emailAddress ?? "";
@@ -74,27 +84,42 @@ export async function GET(req: NextRequest) {
       ),
     ];
 
-    const messages: gmail_v1.Schema$Message[] = [];
-    for (const batch of chunk(ids, BATCH_SIZE)) {
+    const { missing } = partitionCached(ids, mailCache);
+
+    let cached = 0;
+    for (const batch of chunk(missing, BATCH_SIZE)) {
       const fetched = await Promise.allSettled(
         batch.map((id) =>
           gmail.users.messages.get({ userId: "me", id, format: "full" })
         )
       );
       for (const res of fetched) {
-        if (res.status === "fulfilled") messages.push(res.value.data);
+        if (res.status !== "fulfilled") continue;
+        const msg = res.value.data;
+        const id = msg.id ?? "";
+        if (!id) continue;
+        mailCache.entries[id] = cacheEntryFromParsed(
+          parseLeaveMail(msg, selfEmail),
+          msg.internalDate ? parseInt(msg.internalDate) : Date.now(),
+          msg.threadId ?? "",
+          extractBodyText(msg)
+        );
+        cached += 1;
       }
     }
 
-    const rows = messages
-      .map((msg) => {
-        const parsed = parseLeaveMail(msg, selfEmail);
-        if (!parsed) return null;
-        const status = decisions[msg.id ?? ""]?.status ?? "pending";
+    if (cached > 0) {
+      await saveMailCache(user, pruneMailCache(mailCache, Date.now()));
+    }
+
+    const rows = ids
+      .map((id) => {
+        const entry = mailCache.entries[id];
+        if (!entry?.m) return null;
         return {
-          id: msg.id ?? "",
-          ...parsed,
-          status,
+          id,
+          ...entry.m,
+          status: decisions[id]?.status ?? "pending",
         };
       })
       .filter((r): r is NonNullable<typeof r> => r !== null);

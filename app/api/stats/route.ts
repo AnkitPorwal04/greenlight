@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { gmail_v1 } from "@googleapis/gmail";
 import { getAuthorizedClient, getGmail } from "@/lib/google";
 import { getUserFromRequest } from "@/lib/session";
-import { parseLeaveMail } from "@/lib/parser";
-import { loadDecisions, loadTeam } from "@/lib/store";
+import { parseLeaveMail, extractBodyText } from "@/lib/parser";
+import {
+  loadDecisions,
+  loadMailCache,
+  saveMailCache,
+  loadTeam,
+} from "@/lib/store";
+import {
+  cacheEntryFromParsed,
+  partitionCached,
+  pruneMailCache,
+} from "@/lib/mail-cache";
 import { aggregateStatsForTeam, type StatsEntry } from "@/lib/stats";
 import { cancelledLeaveKeys, isLeaveCancelled } from "@/lib/cancellation";
 import { fetchDirectRequests } from "@/lib/direct-fetch";
@@ -36,7 +45,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const gmail = getGmail(client);
-    const [profile, list, decisions, team] = await Promise.all([
+    const [profile, list, decisions, team, mailCache] = await Promise.all([
       gmail.users.getProfile({ userId: "me" }),
       gmail.users.messages.list({
         userId: "me",
@@ -45,6 +54,7 @@ export async function GET(req: NextRequest) {
       }),
       loadDecisions(user),
       loadTeam(user),
+      loadMailCache(user),
     ]);
 
     const selfEmail = profile.data.emailAddress ?? "";
@@ -56,22 +66,43 @@ export async function GET(req: NextRequest) {
       ),
     ];
 
-    const messages: gmail_v1.Schema$Message[] = [];
-    for (const batch of chunk(ids, BATCH_SIZE)) {
+    const { missing } = partitionCached(ids, mailCache);
+
+    let cached = 0;
+    for (const batch of chunk(missing, BATCH_SIZE)) {
       const fetched = await Promise.all(
         batch.map((id) =>
           gmail.users.messages.get({ userId: "me", id, format: "full" })
         )
       );
-      for (const res of fetched) messages.push(res.data);
+      for (const res of fetched) {
+        const msg = res.data;
+        const id = msg.id ?? "";
+        if (!id) continue;
+        mailCache.entries[id] = cacheEntryFromParsed(
+          parseLeaveMail(msg, selfEmail),
+          msg.internalDate ? parseInt(msg.internalDate) : Date.now(),
+          msg.threadId ?? "",
+          extractBodyText(msg)
+        );
+        cached += 1;
+      }
     }
 
-    const parsedRows = messages
-      .map((msg) => {
-        const parsed = parseLeaveMail(msg, selfEmail);
-        if (!parsed) return null;
-        const id = msg.id ?? "";
-        return { msg, parsed, id, status: decisions[id]?.status ?? "pending" };
+    if (cached > 0) {
+      await saveMailCache(user, pruneMailCache(mailCache, Date.now()));
+    }
+
+    const parsedRows = ids
+      .map((id) => {
+        const entry = mailCache.entries[id];
+        if (!entry?.m) return null;
+        return {
+          id,
+          parsed: entry.m,
+          receivedMs: entry.t,
+          status: decisions[id]?.status ?? "pending",
+        };
       })
       .filter((r): r is NonNullable<typeof r> => r !== null);
 
@@ -92,16 +123,13 @@ export async function GET(req: NextRequest) {
       if (r.parsed.kind === "cancellation") continue;
       // Neither is a leave the employee later cancelled.
       if (isLeaveCancelled(r.parsed, cancelled)) continue;
-      const receivedMs = r.msg.internalDate
-        ? parseInt(r.msg.internalDate)
-        : Date.now();
       entries.push({
         id: r.id,
         employeeName: r.parsed.employeeName,
         employeeCode: r.parsed.employeeCode,
         leaveType: r.parsed.leaveType,
         numberOfDays: r.parsed.numberOfDays,
-        receivedAt: new Date(receivedMs).toISOString(),
+        receivedAt: new Date(r.receivedMs).toISOString(),
         status: r.status,
       });
     }
