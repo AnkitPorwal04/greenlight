@@ -3,7 +3,20 @@ import type { gmail_v1 } from "@googleapis/gmail";
 import { getAuthorizedClient, getGmail } from "@/lib/google";
 import { getUserFromRequest } from "@/lib/session";
 import { parseLeaveMail, extractBodyText } from "@/lib/parser";
-import { loadDecisions, loadNoAuto, saveDecision, loadTeam } from "@/lib/store";
+import {
+  loadDecisions,
+  loadMailCache,
+  loadNoAuto,
+  saveDecision,
+  saveMailCache,
+  loadTeam,
+} from "@/lib/store";
+import {
+  buildLeaveRequest,
+  cacheEntryFromParsed,
+  partitionCached,
+  pruneMailCache,
+} from "@/lib/mail-cache";
 import { loadEmployees } from "@/lib/employees";
 import { filterByTeam } from "@/lib/team";
 import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
@@ -17,7 +30,7 @@ import {
   LEAVES_MAX_MESSAGES,
   LEAVE_MAIL_QUERY,
 } from "@/lib/gmail-window";
-import type { LeaveRequest } from "@/lib/types";
+import type { Decision, LeaveRequest } from "@/lib/types";
 
 function fromHeader(msg: gmail_v1.Schema$Message): string {
   return (
@@ -55,6 +68,25 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
+async function loadThreads(
+  gmail: gmail_v1.Gmail,
+  threadIds: string[],
+  into: Map<string, gmail_v1.Schema$Thread>,
+): Promise<void> {
+  for (const batch of chunk(threadIds, THREAD_BATCH_SIZE)) {
+    const fetched = await Promise.all(
+      batch.map((tid) =>
+        gmail.users.threads.get({
+          userId: "me",
+          id: tid,
+          format: "full",
+        }),
+      ),
+    );
+    fetched.forEach((res, i) => into.set(batch[i], res.data));
+  }
+}
+
 export async function GET(req: NextRequest) {
   const user = getUserFromRequest(req);
   if (!user) {
@@ -80,7 +112,7 @@ export async function GET(req: NextRequest) {
   try {
     const gmail = getGmail(client);
     const since = leavesWindowStart();
-    const [profile, listed, decisions, employees, undone, team] =
+    const [profile, listed, decisions, employees, undone, team, mailCache] =
       await Promise.all([
         gmail.users.getProfile({ userId: "me" }),
         collectMessageRefs(LEAVES_MAX_MESSAGES, async (pageToken) => {
@@ -102,79 +134,80 @@ export async function GET(req: NextRequest) {
         loadEmployees(),
         loadNoAuto(user),
         loadTeam(user),
+        loadMailCache(user),
       ]);
     const noAuto = new Set(undone);
     const selfEmail = profile.data.emailAddress ?? "";
     const refs = listed.refs;
 
-    const threadIds = [
-      ...new Set(
-        refs
-          .map((r) => r.threadId)
-          .filter((tid): tid is string => Boolean(tid)),
-      ),
-    ];
-    const threads: gmail_v1.Schema$Thread[] = [];
-    for (const batch of chunk(threadIds, THREAD_BATCH_SIZE)) {
-      const fetched = await Promise.all(
-        batch.map((tid) =>
-          gmail.users.threads.get({
-            userId: "me",
-            id: tid,
-            format: "full",
-          }),
+    const wantedIds = new Set(refs.map((r) => r.id));
+    const { missing } = partitionCached([...wantedIds], mailCache);
+    const missingIds = new Set(missing);
+
+    const threads = new Map<string, gmail_v1.Schema$Thread>();
+    await loadThreads(
+      gmail,
+      [
+        ...new Set(
+          refs
+            .filter((r) => missingIds.has(r.id))
+            .map((r) => r.threadId)
+            .filter((tid): tid is string => Boolean(tid)),
         ),
-      );
-      for (const res of fetched) threads.push(res.data);
+      ],
+      threads,
+    );
+
+    let cached = 0;
+    for (const thread of threads.values()) {
+      for (const msg of thread.messages ?? []) {
+        const id = msg.id ?? "";
+        if (!id || !missingIds.has(id)) continue;
+        mailCache.entries[id] = cacheEntryFromParsed(
+          parseLeaveMail(msg, selfEmail),
+          msg.internalDate ? parseInt(msg.internalDate) : Date.now(),
+          msg.threadId ?? "",
+          extractBodyText(msg),
+        );
+        cached += 1;
+      }
     }
 
-    const wantedIds = new Set(refs.map((r) => r.id));
     const requests: LeaveRequest[] = [];
-    for (const thread of threads) {
-      const wanted = (thread.messages ?? []).filter((m) =>
-        wantedIds.has(m.id!),
-      );
-      for (const msg of wanted) {
-        const parsed = parseLeaveMail(msg, selfEmail);
-        if (!parsed) continue;
+    for (const ref of refs) {
+      const entry = mailCache.entries[ref.id];
+      if (!entry) continue;
+      const request = buildLeaveRequest(ref.id, entry, employees, decisions);
+      if (request) requests.push(request);
+    }
 
-        const directoryEntry = employees[parsed.employeeCode.toUpperCase()];
-        let decision = decisions[msg.id!];
+    const undecided = requests.filter(
+      (r) => r.status === "pending" && !noAuto.has(r.id) && r.threadId,
+    );
+    await loadThreads(
+      gmail,
+      [...new Set(undecided.map((r) => r.threadId))].filter(
+        (tid) => !threads.has(tid),
+      ),
+      threads,
+    );
 
-        const autoAllowed = !noAuto.has(msg.id!);
+    for (const request of undecided) {
+      const thread = threads.get(request.threadId);
+      if (!thread || !threadHasMyReply(thread, request.id, selfEmail)) continue;
+      const decision: Decision = {
+        status: "handled",
+        decidedAt: new Date().toISOString(),
+        note: "Auto-detected: you already replied in this Gmail thread",
+      };
+      await saveDecision(user, request.id, decision);
+      request.status = decision.status;
+      request.decidedAt = decision.decidedAt;
+      request.decisionNote = decision.note;
+    }
 
-        if (
-          !decision &&
-          autoAllowed &&
-          threadHasMyReply(thread, msg.id!, selfEmail)
-        ) {
-          decision = {
-            status: "handled",
-            decidedAt: new Date().toISOString(),
-            note: "Auto-detected: you already replied in this Gmail thread",
-          };
-          await saveDecision(user, msg.id!, decision);
-        }
-
-        const receivedMs = msg.internalDate
-          ? parseInt(msg.internalDate)
-          : Date.now();
-        const employeeEmail = directoryEntry?.email ?? parsed.employeeEmail;
-
-        requests.push({
-          id: msg.id!,
-          threadId: msg.threadId ?? "",
-          ...parsed,
-          employeeEmail,
-          emailVerified: Boolean(directoryEntry),
-          bodyText: extractBodyText(msg),
-          receivedAt: new Date(receivedMs).toISOString(),
-          status: decision?.status ?? "pending",
-          decidedAt: decision?.decidedAt,
-          decisionNote: decision?.note,
-          mailSent: Boolean(decision?.sentTo),
-        });
-      }
+    if (cached > 0) {
+      await saveMailCache(user, pruneMailCache(mailCache, Date.now()));
     }
 
     const direct = await fetchDirectRequests(
