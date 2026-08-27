@@ -31,31 +31,8 @@ import {
   LEAVES_MAX_MESSAGES,
   LEAVE_MAIL_QUERY,
 } from "@/lib/gmail-window";
+import { replyCoversApplication } from "@/lib/thread-reply";
 import type { Decision, LeaveRequest } from "@/lib/types";
-
-function fromHeader(msg: gmail_v1.Schema$Message): string {
-  return (
-    msg.payload?.headers?.find((h) => h.name?.toLowerCase() === "from")
-      ?.value ?? ""
-  ).toLowerCase();
-}
-
-function threadHasMyReply(
-  thread: gmail_v1.Schema$Thread,
-  applicationMsgId: string,
-  selfEmail: string,
-): boolean {
-  const self = selfEmail.toLowerCase();
-  const msgs = thread.messages ?? [];
-  const app = msgs.find((m) => m.id === applicationMsgId);
-  const appTime = app?.internalDate ? parseInt(app.internalDate) : 0;
-  return msgs.some(
-    (m) =>
-      m.id !== applicationMsgId &&
-      fromHeader(m).includes(self) &&
-      (m.internalDate ? parseInt(m.internalDate) : 0) > appTime,
-  );
-}
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -183,6 +160,15 @@ export async function GET(req: NextRequest) {
       if (request) requests.push(request);
     }
 
+    const applicationsPerThread = new Map<string, number>();
+    for (const request of requests) {
+      if (!request.threadId) continue;
+      applicationsPerThread.set(
+        request.threadId,
+        (applicationsPerThread.get(request.threadId) ?? 0) + 1,
+      );
+    }
+
     const undecided = requests.filter(
       (r) => r.status === "pending" && !noAuto.has(r.id) && r.threadId,
     );
@@ -196,7 +182,15 @@ export async function GET(req: NextRequest) {
 
     for (const request of undecided) {
       const thread = threads.get(request.threadId);
-      if (!thread || !threadHasMyReply(thread, request.id, selfEmail)) continue;
+      if (!thread) continue;
+      const covered = replyCoversApplication({
+        messages: thread.messages ?? [],
+        applicationMsgId: request.id,
+        selfEmail,
+        applicationsInThread:
+          applicationsPerThread.get(request.threadId) ?? 1,
+      });
+      if (!covered) continue;
       const decision: Decision = {
         status: "handled",
         decidedAt: new Date().toISOString(),
