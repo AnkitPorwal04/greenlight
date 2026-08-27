@@ -1,9 +1,12 @@
 import { delKey, getJSON, setJSON } from "./storage";
 import { normalizeTeamName } from "./team-name";
+import { emptyMailCache, readMailCache } from "./mail-cache";
+import type { MailCache } from "./mail-cache";
 import type { DirectClassification } from "./classify";
 import type { Decision } from "./types";
 
 export const CLASSIFICATION_TTL_SECONDS = 60 * 24 * 60 * 60;
+export const MAIL_CACHE_TTL_SECONDS = 400 * 24 * 60 * 60;
 export const MAX_DISMISSED = 500;
 
 function decisionsKey(email: string) {
@@ -28,6 +31,29 @@ function classificationKey(email: string, messageId: string) {
 
 function dismissedKey(email: string) {
   return `dismissed:${email.toLowerCase()}`;
+}
+
+function mailCacheKey(email: string) {
+  return `mailcache:${email.toLowerCase()}`;
+}
+
+export async function loadMailCache(email: string): Promise<MailCache> {
+  try {
+    return readMailCache(await getJSON<unknown>(mailCacheKey(email)));
+  } catch {
+    return emptyMailCache();
+  }
+}
+
+export async function saveMailCache(
+  email: string,
+  cache: MailCache
+): Promise<void> {
+  try {
+    await setJSON(mailCacheKey(email), cache, MAIL_CACHE_TTL_SECONDS);
+  } catch {
+    return;
+  }
 }
 
 export function trimDismissed(ids: string[]): string[] {
