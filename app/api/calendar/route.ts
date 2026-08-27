@@ -15,22 +15,25 @@ import {
 } from "@/lib/mail-cache";
 import { filterByTeam } from "@/lib/team";
 import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
-import { gmailAfterDate, monthStart } from "@/lib/history";
+import { gmailAfterDate } from "@/lib/history";
 import { toCalendarLeaves } from "@/lib/calendar";
 import { fetchDirectRequests } from "@/lib/direct-fetch";
 import { dedupeLeaves } from "@/lib/dedupe";
-import { LEAVE_MAIL_QUERY } from "@/lib/gmail-window";
+import {
+  calendarWindowStart,
+  collectMessageRefs,
+  windowedQuery,
+  CALENDAR_MAX_MESSAGES,
+  GMAIL_PAGE_SIZE,
+  LEAVE_MAIL_QUERY,
+} from "@/lib/gmail-window";
 import type { CalendarCandidate } from "@/lib/calendar";
 import type { DedupableRow } from "@/lib/dedupe";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const MAX_MESSAGES = 500;
 const BATCH_SIZE = 40;
-// Look back a few months of applications so both recent and upcoming leaves are
-// covered (a leave for next month was applied recently).
-const MONTHS_BACK = 2;
 
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -62,16 +65,23 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "not_connected" }, { status: 401 });
   }
 
-  const since = monthStart(new Date(), MONTHS_BACK);
+  const since = calendarWindowStart();
 
   try {
     const gmail = getGmail(client);
-    const [profile, list, decisions, team, mailCache] = await Promise.all([
+    const [profile, listed, decisions, team, mailCache] = await Promise.all([
       gmail.users.getProfile({ userId: "me" }),
-      gmail.users.messages.list({
-        userId: "me",
-        q: `${LEAVE_MAIL_QUERY} after:${gmailAfterDate(since)}`,
-        maxResults: MAX_MESSAGES,
+      collectMessageRefs(CALENDAR_MAX_MESSAGES, async (pageToken) => {
+        const page = await gmail.users.messages.list({
+          userId: "me",
+          q: windowedQuery(LEAVE_MAIL_QUERY, since),
+          maxResults: GMAIL_PAGE_SIZE,
+          pageToken,
+        });
+        return {
+          refs: (page.data.messages ?? []).map((m) => ({ id: m.id ?? "" })),
+          nextPageToken: page.data.nextPageToken ?? undefined,
+        };
       }),
       loadDecisions(user),
       loadTeam(user),
@@ -80,11 +90,7 @@ export async function GET(req: NextRequest) {
 
     const selfEmail = profile.data.emailAddress ?? "";
     const ids = [
-      ...new Set(
-        (list.data.messages ?? [])
-          .map((m) => m.id)
-          .filter((id): id is string => Boolean(id))
-      ),
+      ...new Set(listed.refs.map((r) => r.id).filter(Boolean)),
     ];
 
     const { missing } = partitionCached(ids, mailCache);

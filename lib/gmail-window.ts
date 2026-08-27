@@ -9,7 +9,10 @@ export const LEAVE_MAIL_QUERY =
 
 export const LEAVES_MAX_MESSAGES = 500;
 export const HISTORY_MAX_MESSAGES = 1000;
+export const CALENDAR_MAX_MESSAGES = 1000;
 export const GMAIL_PAGE_SIZE = 100;
+
+export const CALENDAR_MONTHS_BACK = 6;
 
 export interface MessageRef {
   id: string;
@@ -32,6 +35,10 @@ export function windowedQuery(query: string, since: Date): string {
 
 export function leavesWindowStart(now: Date = new Date()): Date {
   return monthStart(now, 1);
+}
+
+export function calendarWindowStart(now: Date = new Date()): Date {
+  return monthStart(now, CALENDAR_MONTHS_BACK);
 }
 
 export async function collectMessageRefs(

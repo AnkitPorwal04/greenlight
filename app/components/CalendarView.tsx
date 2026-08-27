@@ -4,22 +4,79 @@ import { avatarTone, initials, leaveTypeStyle, statusLabel } from "./utils";
 import {
   addDaysYmd,
   isValidYmd,
-  leaveCoversDay,
   longDateFromYmd,
   todayYmd,
 } from "@/lib/leave-dates";
+import { splitDayLeaves, type CalendarLeave } from "@/lib/calendar";
 
-interface CalendarLeave {
-  id: string;
-  employeeName: string;
-  employeeCode: string;
-  leaveType: string;
-  status: string;
-  fromDate: string;
-  toDate: string;
-  fromYmd: string;
-  toYmd: string;
-  numberOfDays: number;
+function PersonRow({ leave }: { leave: CalendarLeave }) {
+  const type = leave.leaveType || "Leave";
+  return (
+    <div className="flex items-center gap-3 px-1 py-3.5">
+      <span
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${avatarTone(
+          leave.employeeName
+        )}`}
+      >
+        {initials(leave.employeeName)}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline gap-x-2.5">
+          <span className="truncate text-[14px] font-semibold text-[var(--text-primary)]">
+            {leave.employeeName}
+          </span>
+          <span className="font-mono text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
+            {leave.employeeCode}
+          </span>
+        </div>
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px]">
+          <span className={`font-medium ${leaveTypeStyle(type)}`}>{type}</span>
+          <span className="text-[var(--text-muted)]">·</span>
+          <span className="font-mono text-[var(--text-secondary)]">
+            {leave.fromDate === leave.toDate
+              ? leave.fromDate
+              : `${leave.fromDate} – ${leave.toDate}`}
+          </span>
+        </div>
+      </div>
+      <span className="shrink-0 font-mono text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
+        {statusLabel(leave.status)}
+      </span>
+    </div>
+  );
+}
+
+function DaySection({
+  title,
+  lamp,
+  leaves,
+}: {
+  title: string;
+  lamp: string;
+  leaves: CalendarLeave[];
+}) {
+  if (leaves.length === 0) return null;
+  return (
+    <section>
+      <div className="flex items-baseline justify-between gap-x-6 pb-2">
+        <h3 className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
+          <span
+            aria-hidden="true"
+            className={`lamp-dot h-[5px] w-[5px] shrink-0 ${lamp}`}
+          />
+          {title}
+        </h3>
+        <span className="font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
+          {leaves.length}
+        </span>
+      </div>
+      <div className="divide-y divide-[var(--border)] border-y border-[var(--border)]">
+        {leaves.map((l) => (
+          <PersonRow key={l.id} leave={l} />
+        ))}
+      </div>
+    </section>
+  );
 }
 
 export function CalendarView() {
@@ -55,13 +112,7 @@ export function CalendarView() {
     };
   }, []);
 
-  const onDay = useMemo(
-    () =>
-      leaves
-        .filter((l) => leaveCoversDay(l.fromYmd, l.toYmd, day))
-        .sort((a, b) => a.employeeName.localeCompare(b.employeeName)),
-    [leaves, day]
-  );
+  const onDay = useMemo(() => splitDayLeaves(leaves, day), [leaves, day]);
 
   return (
     <div>
@@ -101,10 +152,10 @@ export function CalendarView() {
       {/* Count headline */}
       <div className="mb-6 flex items-baseline gap-3 border-b border-[var(--border)] pb-4">
         <span className="font-mono text-[32px] font-medium leading-none tabular-nums text-[var(--text-primary)] sm:text-[40px]">
-          {loading ? "–" : onDay.length}
+          {loading ? "–" : onDay.total}
         </span>
         <span className="text-[13px] text-[var(--text-muted)]">
-          {onDay.length === 1 ? "person on leave" : "people on leave"} on{" "}
+          {onDay.total === 1 ? "person on leave" : "people on leave"} on{" "}
           {longDateFromYmd(day)}
         </span>
       </div>
@@ -120,50 +171,18 @@ export function CalendarView() {
             <div key={i} className="skeleton h-12 w-full rounded" />
           ))}
         </div>
-      ) : onDay.length === 0 ? (
+      ) : onDay.total === 0 ? (
         <p className="py-10 text-center text-[13px] text-[var(--text-muted)]">
           No one on your team is on leave that day.
         </p>
       ) : (
-        <div className="divide-y divide-[var(--border)] border-y border-[var(--border)]">
-          {onDay.map((l) => {
-            const type = l.leaveType || "Leave";
-            return (
-              <div key={l.id} className="flex items-center gap-3 px-1 py-3.5">
-                <span
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${avatarTone(
-                    l.employeeName
-                  )}`}
-                >
-                  {initials(l.employeeName)}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-baseline gap-x-2.5">
-                    <span className="truncate text-[14px] font-semibold text-[var(--text-primary)]">
-                      {l.employeeName}
-                    </span>
-                    <span className="font-mono text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
-                      {l.employeeCode}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px]">
-                    <span className={`font-medium ${leaveTypeStyle(type)}`}>
-                      {type}
-                    </span>
-                    <span className="text-[var(--text-muted)]">·</span>
-                    <span className="font-mono text-[var(--text-secondary)]">
-                      {l.fromDate === l.toDate
-                        ? l.fromDate
-                        : `${l.fromDate} – ${l.toDate}`}
-                    </span>
-                  </div>
-                </div>
-                <span className="shrink-0 font-mono text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
-                  {statusLabel(l.status)}
-                </span>
-              </div>
-            );
-          })}
+        <div className="space-y-8">
+          <DaySection
+            title="Approved"
+            lamp="lamp-green"
+            leaves={onDay.approved}
+          />
+          <DaySection title="Pending" lamp="lamp-amber" leaves={onDay.pending} />
         </div>
       )}
     </div>

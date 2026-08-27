@@ -1,10 +1,14 @@
 import { describe, it, expect, vi } from "vitest";
 import {
+  calendarWindowStart,
   collectMessageRefs,
   leavesWindowStart,
   windowedQuery,
+  CALENDAR_MAX_MESSAGES,
+  GMAIL_PAGE_SIZE,
   type MessageRefPage,
 } from "./gmail-window";
+import { monthStart } from "./history";
 
 function refs(...ids: string[]) {
   return ids.map((id) => ({ id, threadId: `t-${id}` }));
@@ -128,5 +132,62 @@ describe("collectMessageRefs", () => {
     expect(result.refs.map((r) => r.id)).toEqual(["a"]);
     expect(result.capped).toBe(false);
     expect(calls).toEqual([undefined]);
+  });
+});
+
+describe("calendarWindowStart", () => {
+  it("starts at the first day of a month well before the inbox window", () => {
+    expect(calendarWindowStart(new Date(2026, 7, 27))).toEqual(
+      new Date(2026, 1, 1),
+    );
+  });
+
+  it("rolls back across a year boundary", () => {
+    expect(calendarWindowStart(new Date(2026, 2, 9))).toEqual(
+      new Date(2025, 8, 1),
+    );
+  });
+
+  it("covers a leave applied months before the day it starts", () => {
+    const now = new Date(2026, 7, 27);
+    const appliedAt = new Date(2026, 2, 10);
+
+    expect(monthStart(now, 2).getTime()).toBeGreaterThan(appliedAt.getTime());
+    expect(calendarWindowStart(now).getTime()).toBeLessThanOrEqual(
+      appliedAt.getTime(),
+    );
+  });
+
+  it("reaches further back than the leaves window", () => {
+    const now = new Date(2026, 7, 27);
+    expect(calendarWindowStart(now).getTime()).toBeLessThan(
+      leavesWindowStart(now).getTime(),
+    );
+  });
+});
+
+describe("calendar message paging", () => {
+  it("collects more than one Gmail page of applications", async () => {
+    const pageOf = (prefix: string, token?: string): MessageRefPage => ({
+      refs: Array.from({ length: GMAIL_PAGE_SIZE }, (_, i) => ({
+        id: `${prefix}-${i}`,
+      })),
+      nextPageToken: token,
+    });
+    const { fetchPage } = pager([
+      pageOf("a", "p2"),
+      pageOf("b", "p3"),
+      pageOf("c"),
+    ]);
+
+    const result = await collectMessageRefs(CALENDAR_MAX_MESSAGES, fetchPage);
+
+    expect(result.refs).toHaveLength(GMAIL_PAGE_SIZE * 3);
+    expect(result.capped).toBe(false);
+    expect(fetchPage).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps a cap above a single Gmail page", () => {
+    expect(CALENDAR_MAX_MESSAGES).toBeGreaterThan(GMAIL_PAGE_SIZE);
   });
 });
