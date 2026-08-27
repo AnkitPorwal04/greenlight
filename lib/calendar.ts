@@ -1,4 +1,4 @@
-import { parseLeaveDate } from "./leave-dates";
+import { leaveCoversDay, parseLeaveDate } from "./leave-dates";
 import { cancelledLeaveKeys, isLeaveCancelled } from "./cancellation";
 import type { LeaveStatus } from "./types";
 
@@ -29,8 +29,42 @@ export interface CalendarCandidate {
 
 export const NOT_ON_LEAVE_STATUSES: LeaveStatus[] = ["rejected", "withdrawn"];
 
+export const SETTLED_STATUSES: LeaveStatus[] = ["approved", "handled"];
+
 export function countsAsOnLeave(status: string): boolean {
   return !(NOT_ON_LEAVE_STATUSES as string[]).includes(status);
+}
+
+export function countsAsSettled(status: string): boolean {
+  return (SETTLED_STATUSES as string[]).includes(status);
+}
+
+export interface DayLeaveSections {
+  approved: CalendarLeave[];
+  pending: CalendarLeave[];
+  total: number;
+}
+
+function byEmployeeName(a: CalendarLeave, b: CalendarLeave): number {
+  return a.employeeName.localeCompare(b.employeeName);
+}
+
+export function splitDayLeaves(
+  leaves: CalendarLeave[],
+  dayYmd: string,
+): DayLeaveSections {
+  const approved: CalendarLeave[] = [];
+  const pending: CalendarLeave[] = [];
+
+  for (const leave of leaves) {
+    if (!leaveCoversDay(leave.fromYmd, leave.toYmd, dayYmd)) continue;
+    if (countsAsSettled(leave.status)) approved.push(leave);
+    else pending.push(leave);
+  }
+
+  approved.sort(byEmployeeName);
+  pending.sort(byEmployeeName);
+  return { approved, pending, total: approved.length + pending.length };
 }
 
 export function toCalendarLeaves(rows: CalendarCandidate[]): CalendarLeave[] {
