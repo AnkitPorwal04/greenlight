@@ -13,6 +13,7 @@ export interface CalendarLeave {
   fromYmd: string;
   toYmd: string;
   numberOfDays: number;
+  receivedAt?: string;
 }
 
 export interface CalendarCandidate {
@@ -50,15 +51,45 @@ function byEmployeeName(a: CalendarLeave, b: CalendarLeave): number {
   return a.employeeName.localeCompare(b.employeeName);
 }
 
+function employeeKey(leave: CalendarLeave): string {
+  const code = leave.employeeCode.trim().toUpperCase();
+  const name = leave.employeeName.trim().toLowerCase();
+  return code || name || `#${leave.id}`;
+}
+
+function receivedMs(receivedAt?: string): number {
+  const ms = Date.parse(receivedAt ?? "");
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function arrivedLater(
+  candidate: CalendarLeave,
+  current: CalendarLeave
+): boolean {
+  const received = receivedMs(candidate.receivedAt);
+  const receivedCurrent = receivedMs(current.receivedAt);
+  if (received !== receivedCurrent) return received > receivedCurrent;
+
+  return candidate.id > current.id;
+}
+
 export function splitDayLeaves(
   leaves: CalendarLeave[],
   dayYmd: string,
 ): DayLeaveSections {
-  const approved: CalendarLeave[] = [];
-  const pending: CalendarLeave[] = [];
-
+  const latestPerEmployee = new Map<string, CalendarLeave>();
   for (const leave of leaves) {
     if (!leaveCoversDay(leave.fromYmd, leave.toYmd, dayYmd)) continue;
+    const key = employeeKey(leave);
+    const current = latestPerEmployee.get(key);
+    if (current === undefined || arrivedLater(leave, current)) {
+      latestPerEmployee.set(key, leave);
+    }
+  }
+
+  const approved: CalendarLeave[] = [];
+  const pending: CalendarLeave[] = [];
+  for (const leave of latestPerEmployee.values()) {
     if (countsAsSettled(leave.status)) approved.push(leave);
     else pending.push(leave);
   }
@@ -93,6 +124,7 @@ export function toCalendarLeaves(rows: CalendarCandidate[]): CalendarLeave[] {
       fromYmd,
       toYmd,
       numberOfDays: r.numberOfDays,
+      receivedAt: r.receivedAt,
     });
   }
   return out;
