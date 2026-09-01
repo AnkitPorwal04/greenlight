@@ -6,6 +6,14 @@ import { parseLeaveDate } from "./leave-dates";
 // same employee + same exact span is already the same leave, and dropping the
 // type avoids a false negative if greytHR word the type slightly differently
 // between the application and the cancellation.
+//
+// The match is also ordered in time: a cancellation only covers requests that
+// arrived at or before the cancellation mail itself, so re-applying for the same
+// span afterwards stands. A request whose own arrival time is unreadable is
+// still covered, so a broken timestamp cannot put a cancelled leave back on the
+// calendar.
+
+export type ReceivedTime = string | number;
 
 export interface CancellableRow {
   employeeCode: string;
@@ -13,12 +21,14 @@ export interface CancellableRow {
   toDate: string;
   status: string;
   kind?: string;
+  receivedAt?: ReceivedTime;
 }
 
 export interface DatedRow {
   employeeCode: string;
   fromDate: string;
   toDate: string;
+  receivedAt?: ReceivedTime;
 }
 
 // A cancellation only actually cancels the leave once the manager has acted on
@@ -34,6 +44,16 @@ export function isEffectiveCancellation(row: {
   return row.kind === "cancellation" && EFFECTIVE_STATUSES.has(row.status);
 }
 
+const COVERS_ANY_ARRIVAL = Number.POSITIVE_INFINITY;
+
+function receivedMs(received?: ReceivedTime): number | null {
+  if (typeof received === "number") {
+    return Number.isFinite(received) ? received : null;
+  }
+  const parsed = Date.parse(received ?? "");
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function keyFor(code: string, fromYmd: string, toYmd: string): string {
   return `${code.trim().toUpperCase()}|${fromYmd}|${toYmd}`;
 }
@@ -45,23 +65,33 @@ function spanKey(row: DatedRow): string | null {
   return keyFor(row.employeeCode, fromYmd, toYmd);
 }
 
-// Keys (employee + date span) of leaves whose cancellation has been approved.
-export function cancelledLeaveKeys(rows: CancellableRow[]): Set<string> {
-  const keys = new Set<string>();
+// When each span (employee + date span) was cancelled, latest cancellation wins.
+export function cancelledLeaveTimes(
+  rows: CancellableRow[]
+): Map<string, number> {
+  const cancelledAt = new Map<string, number>();
   for (const r of rows) {
     if (!isEffectiveCancellation(r)) continue;
     const key = spanKey(r);
-    if (key !== null) keys.add(key);
+    if (key === null) continue;
+    const at = receivedMs(r.receivedAt) ?? COVERS_ANY_ARRIVAL;
+    const known = cancelledAt.get(key);
+    if (known === undefined || at > known) cancelledAt.set(key, at);
   }
-  return keys;
+  return cancelledAt;
 }
 
-// Whether a given leave has an approved cancellation covering the same span.
+// Whether an approved cancellation covers this leave's span and arrival time.
 export function isLeaveCancelled(
   row: DatedRow,
-  cancelledKeys: Set<string>
+  cancelledAt: Map<string, number>
 ): boolean {
-  if (cancelledKeys.size === 0) return false;
+  if (cancelledAt.size === 0) return false;
   const key = spanKey(row);
-  return key !== null && cancelledKeys.has(key);
+  if (key === null) return false;
+  const cancelledMs = cancelledAt.get(key);
+  if (cancelledMs === undefined) return false;
+  const rowMs = receivedMs(row.receivedAt);
+  if (rowMs === null) return true;
+  return rowMs <= cancelledMs;
 }

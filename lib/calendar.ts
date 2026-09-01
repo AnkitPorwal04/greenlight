@@ -1,5 +1,5 @@
 import { leaveCoversDay, parseLeaveDate } from "./leave-dates";
-import { cancelledLeaveKeys, isLeaveCancelled } from "./cancellation";
+import { cancelledLeaveTimes, isLeaveCancelled } from "./cancellation";
 import type { LeaveStatus } from "./types";
 
 export interface CalendarLeave {
@@ -25,6 +25,7 @@ export interface CalendarCandidate {
   numberOfDays: number;
   status: string;
   kind?: string;
+  receivedAt?: string;
 }
 
 export const NOT_ON_LEAVE_STATUSES: LeaveStatus[] = ["rejected", "withdrawn"];
@@ -70,7 +71,7 @@ export function splitDayLeaves(
 export function toCalendarLeaves(rows: CalendarCandidate[]): CalendarLeave[] {
   // Leaves whose cancellation has been approved — the employee is no longer on
   // leave those days, so the original application is dropped below.
-  const cancelled = cancelledLeaveKeys(rows);
+  const cancelled = cancelledLeaveTimes(rows);
 
   const out: CalendarLeave[] = [];
   for (const r of rows) {
