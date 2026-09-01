@@ -14,7 +14,7 @@ import {
   pruneMailCache,
 } from "@/lib/mail-cache";
 import { aggregateStatsForTeam, type StatsEntry } from "@/lib/stats";
-import { cancelledLeaveKeys, isLeaveCancelled } from "@/lib/cancellation";
+import { cancelledLeaveTimes, isLeaveCancelled } from "@/lib/cancellation";
 import { fetchDirectRequests } from "@/lib/direct-fetch";
 import { dedupeLeaves, type DedupableRow } from "@/lib/dedupe";
 import { LEAVE_MAIL_QUERY } from "@/lib/gmail-window";
@@ -109,13 +109,14 @@ export async function GET(req: NextRequest) {
       .filter((r): r is NonNullable<typeof r> => r !== null);
 
     // A leave whose cancellation has been approved was not actually taken.
-    const cancelled = cancelledLeaveKeys(
+    const cancelled = cancelledLeaveTimes(
       parsedRows.map((r) => ({
         employeeCode: r.parsed.employeeCode,
         fromDate: r.parsed.fromDate,
         toDate: r.parsed.toDate,
         status: r.status,
         kind: r.parsed.kind,
+        receivedAt: r.receivedMs,
       }))
     );
 
@@ -157,7 +158,8 @@ export async function GET(req: NextRequest) {
       // Cancellation requests are not leaves taken; keep them out of stats.
       if (r.parsed.kind === "cancellation") continue;
       // Neither is a leave the employee later cancelled.
-      if (isLeaveCancelled(r.parsed, cancelled)) continue;
+      if (isLeaveCancelled({ ...r.parsed, receivedAt: r.receivedMs }, cancelled))
+        continue;
       entries.push({
         id: r.id,
         employeeName: r.parsed.employeeName,
