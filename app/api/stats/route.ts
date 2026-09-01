@@ -166,6 +166,8 @@ export async function GET(req: NextRequest) {
         employeeCode: r.parsed.employeeCode,
         leaveType: r.parsed.leaveType,
         numberOfDays: r.parsed.numberOfDays,
+        fromDate: r.parsed.fromDate,
+        toDate: r.parsed.toDate,
         receivedAt: new Date(r.receivedMs).toISOString(),
         status: r.status,
       });
@@ -182,6 +184,8 @@ export async function GET(req: NextRequest) {
         employeeCode: r.employeeCode,
         leaveType: r.leaveType,
         numberOfDays: r.numberOfDays,
+        fromDate: r.fromDate,
+        toDate: r.toDate,
         receivedAt: r.receivedAt,
         status: r.status,
       });

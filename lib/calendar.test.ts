@@ -195,9 +195,9 @@ describe("countsAsSettled", () => {
 describe("splitDayLeaves", () => {
   it("splits the day into approved and pending", () => {
     const rows = [
-      leave({ id: "a", status: "approved" }),
-      leave({ id: "p", status: "pending" }),
-      leave({ id: "h", status: "handled" }),
+      leave({ id: "a", employeeCode: "EMP1", status: "approved" }),
+      leave({ id: "p", employeeCode: "EMP2", status: "pending" }),
+      leave({ id: "h", employeeCode: "EMP3", status: "handled" }),
     ];
     const day = splitDayLeaves(rows, "2026-08-25");
     expect(day.approved.map((l) => l.id)).toEqual(["a", "h"]);
@@ -206,9 +206,9 @@ describe("splitDayLeaves", () => {
 
   it("keeps the total equal to both sections combined", () => {
     const rows = [
-      leave({ id: "a", status: "approved" }),
-      leave({ id: "p", status: "pending" }),
-      leave({ id: "h", status: "handled" }),
+      leave({ id: "a", employeeCode: "EMP1", status: "approved" }),
+      leave({ id: "p", employeeCode: "EMP2", status: "pending" }),
+      leave({ id: "h", employeeCode: "EMP3", status: "handled" }),
     ];
     const day = splitDayLeaves(rows, "2026-08-25");
     expect(day.total).toBe(3);
@@ -239,10 +239,30 @@ describe("splitDayLeaves", () => {
 
   it("sorts each section by employee name", () => {
     const rows = [
-      leave({ id: "z", employeeName: "Zoya Khan", status: "approved" }),
-      leave({ id: "a", employeeName: "Arjun Rao", status: "approved" }),
-      leave({ id: "m", employeeName: "Meera Iyer", status: "pending" }),
-      leave({ id: "b", employeeName: "Bhavna Das", status: "pending" }),
+      leave({
+        id: "z",
+        employeeCode: "EMP1",
+        employeeName: "Zoya Khan",
+        status: "approved",
+      }),
+      leave({
+        id: "a",
+        employeeCode: "EMP2",
+        employeeName: "Arjun Rao",
+        status: "approved",
+      }),
+      leave({
+        id: "m",
+        employeeCode: "EMP3",
+        employeeName: "Meera Iyer",
+        status: "pending",
+      }),
+      leave({
+        id: "b",
+        employeeCode: "EMP4",
+        employeeName: "Bhavna Das",
+        status: "pending",
+      }),
     ];
     const day = splitDayLeaves(rows, "2026-08-25");
     expect(day.approved.map((l) => l.employeeName)).toEqual([
@@ -260,5 +280,112 @@ describe("splitDayLeaves", () => {
     expect(day.approved).toEqual([]);
     expect(day.pending).toEqual([]);
     expect(day.total).toBe(0);
+  });
+});
+
+describe("one person cannot be on two leaves the same day", () => {
+  const casual = leave({
+    id: "casual",
+    leaveType: "Casual Leave",
+    status: "approved",
+    fromDate: "01 Sep 2026",
+    toDate: "03 Sep 2026",
+    fromYmd: "2026-09-01",
+    toYmd: "2026-09-03",
+    numberOfDays: 3,
+    receivedAt: "2026-08-25T09:00:00.000Z",
+  });
+  const sick = leave({
+    id: "sick",
+    leaveType: "Sick Leave",
+    status: "approved",
+    fromDate: "03 Sep 2026",
+    toDate: "03 Sep 2026",
+    fromYmd: "2026-09-03",
+    toYmd: "2026-09-03",
+    numberOfDays: 1,
+    receivedAt: "2026-09-02T09:00:00.000Z",
+  });
+
+  it("shows only the latest leave on the overlapping day", () => {
+    const day = splitDayLeaves([casual, sick], "2026-09-03");
+    expect(day.approved.map((l) => l.id)).toEqual(["sick"]);
+    expect(day.total).toBe(1);
+  });
+
+  it("still shows the older leave on the days it does not overlap", () => {
+    for (const dayYmd of ["2026-09-01", "2026-09-02"]) {
+      const day = splitDayLeaves([casual, sick], dayYmd);
+      expect(day.approved.map((l) => l.id)).toEqual(["casual"]);
+    }
+  });
+
+  it("does not depend on the order the rows arrive in", () => {
+    const day = splitDayLeaves([sick, casual], "2026-09-03");
+    expect(day.approved.map((l) => l.id)).toEqual(["sick"]);
+  });
+
+  it("collapses across the approved and pending split, not inside each", () => {
+    const pendingSick = { ...sick, status: "pending" };
+    const day = splitDayLeaves([casual, pendingSick], "2026-09-03");
+
+    expect(day.total).toBe(1);
+    expect(day.approved).toEqual([]);
+    expect(day.pending.map((l) => l.id)).toEqual(["sick"]);
+  });
+
+  it("keeps the older approved leave when the newer row is on another day", () => {
+    const later = { ...sick, fromYmd: "2026-09-09", toYmd: "2026-09-09" };
+    const day = splitDayLeaves([casual, later], "2026-09-03");
+    expect(day.approved.map((l) => l.id)).toEqual(["casual"]);
+  });
+
+  it("never collapses two different people onto one row", () => {
+    const other = { ...sick, id: "other", employeeCode: "EMP2" };
+    const day = splitDayLeaves([casual, other], "2026-09-03");
+    expect(day.approved.map((l) => l.id).sort()).toEqual(["casual", "other"]);
+    expect(day.total).toBe(2);
+  });
+
+  it("falls back to the name when the employee code is blank", () => {
+    const rows = [
+      { ...casual, employeeCode: "  ", employeeName: "Asha Nair" },
+      { ...sick, employeeCode: "", employeeName: "asha nair" },
+    ];
+    expect(splitDayLeaves(rows, "2026-09-03").total).toBe(1);
+  });
+
+  it("keeps blank identities apart instead of merging them into one person", () => {
+    const rows = [
+      { ...casual, employeeCode: "", employeeName: "" },
+      { ...sick, employeeCode: "", employeeName: "" },
+    ];
+    expect(splitDayLeaves(rows, "2026-09-03").total).toBe(2);
+  });
+
+  it("treats an unreadable arrival time as the oldest row", () => {
+    const unreadable = { ...casual, receivedAt: "who knows" };
+    const day = splitDayLeaves([unreadable, sick], "2026-09-03");
+    expect(day.approved.map((l) => l.id)).toEqual(["sick"]);
+  });
+
+  it("breaks a dead heat on arrival time by the larger id", () => {
+    const sameTime = { ...sick, receivedAt: casual.receivedAt };
+    const day = splitDayLeaves([casual, sameTime], "2026-09-03");
+    expect(day.approved.map((l) => l.id)).toEqual(["sick"]);
+  });
+});
+
+describe("toCalendarLeaves arrival time", () => {
+  it("carries the arrival time through so the day view can pick the latest", () => {
+    const [row] = toCalendarLeaves([
+      candidate({ receivedAt: "2026-08-20T09:00:00.000Z" }),
+    ]);
+    expect(row.receivedAt).toBe("2026-08-20T09:00:00.000Z");
+  });
+
+  it("leaves the arrival time unset when the row never had one", () => {
+    const [row] = toCalendarLeaves([candidate()]);
+    expect(row.receivedAt).toBeUndefined();
   });
 });
