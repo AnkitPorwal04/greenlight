@@ -527,6 +527,90 @@ describe("a withdrawn leave inside a month", () => {
   });
 });
 
+describe("two leaves overlapping one day", () => {
+  const casual = entry({
+    id: "casual",
+    leaveType: "Casual Leave",
+    fromDate: "01 Sep 2026",
+    toDate: "03 Sep 2026",
+    numberOfDays: 3,
+    receivedAt: "2026-08-25T09:00:00.000Z",
+  });
+  const sick = entry({
+    id: "sick",
+    leaveType: "Sick Leave",
+    fromDate: "03 Sep 2026",
+    toDate: "03 Sep 2026",
+    numberOfDays: 1,
+    receivedAt: "2026-09-02T09:00:00.000Z",
+  });
+
+  it("gives the overlapping day to the newer request only", () => {
+    const september = entriesInMonth([casual, sick], "2026-09");
+    const byId = new Map(september.map((e) => [e.id, e.numberOfDays]));
+
+    expect(byId.get("sick")).toBe(1);
+    expect(byId.get("casual")).toBe(2);
+  });
+
+  it("lets the older request keep the days it still wins", () => {
+    const september = aggregateStats(entriesInMonth([casual, sick], "2026-09"));
+    expect(september.byEmployee[0].days).toBe(3);
+  });
+
+  it("counts both requests in the month even though one lost a day", () => {
+    const september = entriesInMonth([casual, sick], "2026-09");
+    expect(september.map((e) => e.id).sort()).toEqual(["casual", "sick"]);
+  });
+
+  it("does not depend on the order the entries arrive in", () => {
+    const september = entriesInMonth([sick, casual], "2026-09");
+    const byId = new Map(september.map((e) => [e.id, e.numberOfDays]));
+    expect(byId.get("casual")).toBe(2);
+    expect(byId.get("sick")).toBe(1);
+  });
+
+  it("never lets one person's leave steal another person's day", () => {
+    const other = entry({
+      ...sick,
+      id: "other",
+      employeeCode: "E202",
+      employeeName: "Dev Iyer",
+    });
+    const september = entriesInMonth([casual, other], "2026-09");
+    const byId = new Map(september.map((e) => [e.id, e.numberOfDays]));
+
+    expect(byId.get("casual")).toBe(3);
+    expect(byId.get("other")).toBe(1);
+  });
+
+  it("keeps a losing entry in the month so its outcome still shows", () => {
+    const wholeSpanBeaten = entry({
+      ...sick,
+      id: "beaten",
+      fromDate: "03 Sep 2026",
+      toDate: "03 Sep 2026",
+      receivedAt: "2026-08-01T09:00:00.000Z",
+      status: "rejected",
+    });
+    const september = aggregateStats(
+      entriesInMonth([wholeSpanBeaten, sick], "2026-09")
+    );
+
+    expect(september.outcomes.rejected).toBe(1);
+    expect(september.totalRequests).toBe(2);
+  });
+
+  it("breaks a dead heat on arrival time by the larger id", () => {
+    const sameTime = entry({ ...sick, receivedAt: casual.receivedAt });
+    const september = entriesInMonth([casual, sameTime], "2026-09");
+    const byId = new Map(september.map((e) => [e.id, e.numberOfDays]));
+
+    expect(byId.get("sick")).toBe(1);
+    expect(byId.get("casual")).toBe(2);
+  });
+});
+
 describe("payload entries", () => {
   it("carries the deduped entry list the payload was built from", () => {
     const stats = aggregateStats([
