@@ -652,13 +652,14 @@ function MonthScopedStats({
 }) {
   const [picked, setPicked] = useState<string | null>(null);
 
-  const now = useMemo(() => new Date(), []);
-  const months = useMemo(
-    () => buildStatsMonths(data.entries, now),
-    [data, now]
-  );
+  const { months, currentKey } = useMemo(() => {
+    const now = new Date();
+    return {
+      months: buildStatsMonths(data.entries, now),
+      currentKey: statsMonthKey(now.toISOString()),
+    };
+  }, [data]);
 
-  const currentKey = statsMonthKey(now.toISOString());
   const fallbackKey = months.some((m) => m.key === currentKey)
     ? currentKey
     : (months[0]?.key ?? "");
