@@ -157,6 +157,20 @@ describe("withdrawn requests", () => {
   });
 });
 
+describe("month bucketing", () => {
+  it("buckets by UTC month regardless of the local timezone", () => {
+    // 23:30 UTC on the last day of August is already September in any positive
+    // offset (e.g. IST). Bucketing must stay in August so it matches the
+    // client-side member lookup, which only has the ISO string to work from.
+    const stats = aggregateStats([
+      entry({ id: "a", receivedAt: "2026-08-31T23:30:00.000Z" }),
+    ]);
+
+    expect(stats.byMonth).toHaveLength(1);
+    expect(stats.byMonth[0].month).toBe("Aug 2026");
+  });
+});
+
 describe("aggregateStatsForTeam", () => {
   const mine = entry({
     id: "mine",
