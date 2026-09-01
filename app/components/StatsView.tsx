@@ -1,11 +1,17 @@
 "use client";
 
 import { useId, useMemo, useState } from "react";
-import type {
-  StatsEmployee,
-  StatsEmployeeEntry,
-  StatsOutcome,
-  StatsPayload,
+import {
+  aggregateStats,
+  buildStatsMonths,
+  entriesInMonth,
+  statsMonthKey,
+  statsMonthLabel,
+  statsMonthShortLabel,
+  type StatsEmployee,
+  type StatsEmployeeEntry,
+  type StatsOutcome,
+  type StatsPayload,
 } from "@/lib/stats";
 import { ArtTray, EmptyState } from "./States";
 import {
@@ -15,12 +21,9 @@ import {
   IconSearch,
   IconX,
 } from "./icons";
+import { MonthTabs } from "./Shell";
 import { avatarTone, initials, leaveTypeColor, leaveTypeShort } from "./utils";
 
-const OTHER = "Other";
-const OTHER_COLOR = "var(--border-strong)";
-const MAX_MONTHS = 12;
-const TOP_TYPES = 4;
 const TOP_PEOPLE = 10;
 
 function Label({ children }: { children: React.ReactNode }) {
@@ -41,16 +44,6 @@ function Swatch({ color }: { color: string }) {
   );
 }
 
-function formatDay(iso: string) {
-  const d = new Date(iso);
-  if (!iso || Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
-
 function formatShortDay(iso: string) {
   const d = new Date(iso);
   if (!iso || Number.isNaN(d.getTime())) return "—";
@@ -61,30 +54,8 @@ function formatNumber(n: number) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-function shortMonth(label: string) {
-  const [name, year] = label.split(" ");
-  return year ? `${name} ${year.slice(-2)}` : name;
-}
-
 function memberKey(person: { code: string; name: string }) {
   return `${person.code}-${person.name}`;
-}
-
-// A "YYYY-MM" bucket keyed off when the request mail was received. Uses UTC to
-// match the server-side monthKey in lib/stats.ts exactly, so per-member months
-// line up with the Monthly pattern chart regardless of the browser timezone.
-function monthKeyOf(iso: string) {
-  const d = new Date(iso);
-  if (!iso || Number.isNaN(d.getTime())) return "";
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
-function monthLabelOf(key: string) {
-  const [year, month] = key.split("-").map(Number);
-  return new Date(Date.UTC(year, (month || 1) - 1, 1)).toLocaleDateString(
-    "en-GB",
-    { month: "short", year: "numeric", timeZone: "UTC" }
-  );
 }
 
 function breakdown(byType: Record<string, number>) {
@@ -141,7 +112,7 @@ const OUTCOME_BY_KEY = OUTCOMES.reduce(
   {} as Record<StatsOutcome, (typeof OUTCOMES)[number]>
 );
 
-function overviewItems(data: StatsPayload) {
+function overviewItems(data: StatsPayload, monthLabel: string) {
   const items = [
     { label: "Applied", value: String(data.outcomes.applied), muted: false },
     { label: "People", value: String(data.byEmployee.length), muted: false },
@@ -154,8 +125,51 @@ function overviewItems(data: StatsPayload) {
       muted: true,
     });
   }
-  items.push({ label: "Since", value: formatDay(data.sinceDate), muted: false });
+  items.push({ label: "Month", value: monthLabel, muted: false });
   return items;
+}
+
+function Overview({
+  data,
+  monthLabel,
+}: {
+  data: StatsPayload;
+  monthLabel: string;
+}) {
+  return (
+    <section
+      aria-label="Overview"
+      className="border-y border-[var(--border)] py-5"
+    >
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-6 sm:-ml-10 sm:flex sm:flex-wrap sm:items-stretch sm:gap-0">
+        {overviewItems(data, monthLabel).map((item) => (
+          <div
+            key={item.label}
+            className="min-w-0 sm:flex-none sm:border-l sm:border-[var(--border)] sm:px-10"
+          >
+            <dd
+              className={`font-mono text-[22px] font-medium leading-none tracking-tight tabular-nums sm:text-[28px] ${
+                item.muted
+                  ? "text-[var(--text-muted)]"
+                  : "text-[var(--text-primary)]"
+              }`}
+            >
+              {item.value}
+            </dd>
+            <dt className="mt-2 flex items-center gap-1.5 whitespace-nowrap text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">
+              {item.muted && (
+                <span
+                  aria-hidden="true"
+                  className="lamp-dot lamp-hollow h-[5px] w-[5px] shrink-0"
+                />
+              )}
+              {item.label}
+            </dt>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
 }
 
 function OutcomeChips({ person }: { person: StatsEmployee }) {
@@ -257,20 +271,6 @@ function Skeleton() {
   return (
     <div className="mt-10 space-y-12">
       <div className="space-y-4">
-        <div className="skeleton h-3 w-32 rounded" />
-        <div className="space-y-3">
-          {[96, 62, 38].map((w, i) => (
-            <div key={i} className="flex items-center gap-3 sm:gap-4">
-              <div className="skeleton h-2.5 w-14 shrink-0 rounded" />
-              <div
-                className="skeleton h-7 rounded-full"
-                style={{ width: `${w}%` }}
-              />
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="space-y-4">
         <div className="skeleton h-3 w-36 rounded" />
         <div className="divide-y divide-[var(--border)] border-y border-[var(--border)]">
           {[0, 1, 2, 3, 4].map((row) => (
@@ -286,99 +286,6 @@ function Skeleton() {
         </div>
       </div>
     </div>
-  );
-}
-
-function MonthlyPattern({ data }: { data: StatsPayload }) {
-  const { months, series, max } = useMemo(() => {
-    const top = data.byType.slice(0, TOP_TYPES).map((t) => t.type);
-    const visible = data.byMonth
-      .filter((m) => m.total > 0)
-      .slice(-MAX_MONTHS);
-    const hasOther = data.byType.length > top.length;
-    const stack = hasOther ? [...top, OTHER] : top;
-    const rows = visible.map((m) => {
-      const counts = stack.map((type) => {
-        if (type !== OTHER) return m.byType[type] ?? 0;
-        return Object.entries(m.byType).reduce(
-          (sum, [t, n]) => (top.includes(t) ? sum : sum + n),
-          0
-        );
-      });
-      return { month: m.month, total: m.total, counts };
-    });
-    return {
-      months: rows,
-      series: stack,
-      max: rows.reduce((peak, r) => Math.max(peak, r.total), 0),
-    };
-  }, [data]);
-
-  const colorOf = (type: string, index: number) =>
-    type === OTHER ? OTHER_COLOR : leaveTypeColor(type, index);
-
-  if (months.length === 0) return null;
-
-  return (
-    <section className="mt-12">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
-        <Label>Monthly pattern</Label>
-        <span className="font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
-          {months.length} {months.length === 1 ? "month" : "months"}
-        </span>
-      </div>
-
-      <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2">
-        {series.map((type, i) => (
-          <span
-            key={type}
-            className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)]"
-          >
-            <Swatch color={colorOf(type, i)} />
-            {type}
-          </span>
-        ))}
-      </div>
-
-      <div className="mt-6 space-y-3 border-y border-[var(--border)] py-6">
-        {months.map((m) => (
-          <div
-            key={m.month}
-            className="flex items-center gap-3 sm:gap-4"
-            title={`${m.month} — ${m.total} ${
-              m.total === 1 ? "request" : "requests"
-            }`}
-          >
-            <span className="w-14 shrink-0 font-mono text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
-              {shortMonth(m.month)}
-            </span>
-            <div className="h-7 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--surface-raised)]">
-              <div
-                className="flex h-full overflow-hidden rounded-full transition-[width] duration-500 ease-out"
-                style={{ width: max > 0 ? `${(m.total / max) * 100}%` : "0%" }}
-              >
-                {m.counts.map((count, i) =>
-                  count > 0 ? (
-                    <div
-                      key={series[i]}
-                      title={`${series[i]} — ${count}`}
-                      style={{
-                        width: `${(count / m.total) * 100}%`,
-                        background: colorOf(series[i], i),
-                        minWidth: 4,
-                      }}
-                    />
-                  ) : null
-                )}
-              </div>
-            </div>
-            <span className="w-8 shrink-0 text-right font-mono text-[13px] tabular-nums text-[var(--text-primary)]">
-              {m.total}
-            </span>
-          </div>
-        ))}
-      </div>
-    </section>
   );
 }
 
@@ -515,7 +422,7 @@ function MemberLookup({ data }: { data: StatsPayload }) {
     if (!selected) return [];
     const seen = new Set<string>();
     for (const e of selected.entries) {
-      const key = monthKeyOf(e.receivedAt);
+      const key = statsMonthKey(e.receivedAt);
       if (key) seen.add(key);
     }
     return [...seen].sort((a, b) => b.localeCompare(a));
@@ -530,7 +437,7 @@ function MemberLookup({ data }: { data: StatsPayload }) {
     () =>
       selected && activeMonth
         ? selected.entries.filter(
-            (e) => monthKeyOf(e.receivedAt) === activeMonth
+            (e) => statsMonthKey(e.receivedAt) === activeMonth
           )
         : [],
     [selected, activeMonth]
@@ -555,7 +462,7 @@ function MemberLookup({ data }: { data: StatsPayload }) {
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
         <Label>Member lookup</Label>
         <span className="font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
-          {data.byEmployee.length}{" "}
+          all months · {data.byEmployee.length}{" "}
           {data.byEmployee.length === 1 ? "member" : "members"}
         </span>
       </div>
@@ -663,7 +570,7 @@ function MemberLookup({ data }: { data: StatsPayload }) {
                           : "border-[var(--border-strong)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                       }`}
                     >
-                      {monthLabelOf(key)}
+                      {statsMonthShortLabel(key)}
                     </button>
                   );
                 })}
@@ -736,6 +643,67 @@ function ByType({ data }: { data: StatsPayload }) {
   );
 }
 
+function MonthScopedStats({
+  data,
+  loading,
+}: {
+  data: StatsPayload;
+  loading: boolean;
+}) {
+  const [picked, setPicked] = useState<string | null>(null);
+
+  const { months, currentKey } = useMemo(() => {
+    const now = new Date();
+    return {
+      months: buildStatsMonths(data.entries, now),
+      currentKey: statsMonthKey(now.toISOString()),
+    };
+  }, [data]);
+
+  const fallbackKey = months.some((m) => m.key === currentKey)
+    ? currentKey
+    : (months[0]?.key ?? "");
+  const activeKey =
+    picked && months.some((m) => m.key === picked) ? picked : fallbackKey;
+
+  const monthData = useMemo(
+    () => aggregateStats(entriesInMonth(data.entries, activeKey)),
+    [data, activeKey]
+  );
+
+  return (
+    <div className={loading ? "opacity-60 transition-opacity" : ""}>
+      <MonthTabs
+        months={months}
+        active={activeKey}
+        onSelect={setPicked}
+        label="Stats month"
+      />
+
+      {monthData.totalRequests === 0 ? (
+        <div className="border-t border-[var(--border)]">
+          <EmptyState
+            art={<ArtTray />}
+            title={`Nothing applied for in ${statsMonthLabel(activeKey)}`}
+            hint="Pick another month to see what your team took off."
+          />
+        </div>
+      ) : (
+        <>
+          <Overview
+            data={monthData}
+            monthLabel={statsMonthShortLabel(activeKey)}
+          />
+          <TopTakers data={monthData} />
+          <ByType data={monthData} />
+        </>
+      )}
+
+      <MemberLookup data={data} />
+    </div>
+  );
+}
+
 export function StatsView({
   data,
   loading,
@@ -778,45 +746,5 @@ export function StatsView({
     );
   }
 
-  return (
-    <div className={loading ? "opacity-60 transition-opacity" : ""}>
-      <section
-        aria-label="Overview"
-        className="mt-8 border-y border-[var(--border)] py-5"
-      >
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-6 sm:-ml-10 sm:flex sm:flex-wrap sm:items-stretch sm:gap-0">
-          {overviewItems(data).map((item) => (
-            <div
-              key={item.label}
-              className="min-w-0 sm:flex-none sm:border-l sm:border-[var(--border)] sm:px-10"
-            >
-              <dd
-                className={`font-mono text-[22px] font-medium leading-none tracking-tight tabular-nums sm:text-[28px] ${
-                  item.muted
-                    ? "text-[var(--text-muted)]"
-                    : "text-[var(--text-primary)]"
-                }`}
-              >
-                {item.value}
-              </dd>
-              <dt className="mt-2 flex items-center gap-1.5 whitespace-nowrap text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">
-                {item.muted && (
-                  <span
-                    aria-hidden="true"
-                    className="lamp-dot lamp-hollow h-[5px] w-[5px] shrink-0"
-                  />
-                )}
-                {item.label}
-              </dt>
-            </div>
-          ))}
-        </dl>
-      </section>
-
-      <MonthlyPattern data={data} />
-      <TopTakers data={data} />
-      <MemberLookup data={data} />
-      <ByType data={data} />
-    </div>
-  );
+  return <MonthScopedStats data={data} loading={loading} />;
 }
