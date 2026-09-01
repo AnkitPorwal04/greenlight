@@ -77,6 +77,170 @@ describe("buildHistoryMonths", () => {
 
     expect(months.every((m) => m.count === 0)).toBe(true);
   });
+
+  it("seeds empty months with an empty pending list", () => {
+    const months = buildHistoryMonths([], NOW);
+
+    expect(months.map((m) => m.pending)).toEqual([[], []]);
+    expect(months.map((m) => m.requests)).toEqual([[], []]);
+  });
+
+  it("splits pending out of the decided list for the same month", () => {
+    const months = buildHistoryMonths(
+      [
+        request({ id: "done", receivedAt: new Date(2026, 7, 2, 9).toISOString() }),
+        request({
+          id: "rh",
+          status: "pending",
+          receivedAt: new Date(2026, 7, 5, 9).toISOString(),
+        }),
+      ],
+      NOW
+    );
+
+    expect(months[0].requests.map((r) => r.id)).toEqual(["done"]);
+    expect(months[0].pending.map((r) => r.id)).toEqual(["rh"]);
+  });
+
+  it("counts pending and decided together so the month tab stays clickable", () => {
+    const months = buildHistoryMonths(
+      [
+        request({ id: "done", receivedAt: new Date(2026, 7, 2, 9).toISOString() }),
+        request({
+          id: "rh",
+          status: "pending",
+          receivedAt: new Date(2026, 7, 5, 9).toISOString(),
+        }),
+      ],
+      NOW
+    );
+
+    expect(months[0].count).toBe(2);
+  });
+
+  it("gives a pending-only month a non-zero count", () => {
+    const months = buildHistoryMonths(
+      [
+        request({
+          id: "rh",
+          status: "pending",
+          receivedAt: new Date(2026, 7, 5, 9).toISOString(),
+        }),
+      ],
+      NOW
+    );
+
+    expect(months[0].count).toBe(1);
+    expect(months[0].requests).toEqual([]);
+    expect(months[0].pending.map((r) => r.id)).toEqual(["rh"]);
+  });
+
+  it("orders each list newest first independently", () => {
+    const months = buildHistoryMonths(
+      [
+        request({ id: "d1", receivedAt: new Date(2026, 7, 3, 9).toISOString() }),
+        request({
+          id: "p1",
+          status: "pending",
+          receivedAt: new Date(2026, 7, 4, 9).toISOString(),
+        }),
+        request({ id: "d2", receivedAt: new Date(2026, 7, 15, 9).toISOString() }),
+        request({
+          id: "p2",
+          status: "pending",
+          receivedAt: new Date(2026, 7, 16, 9).toISOString(),
+        }),
+      ],
+      NOW
+    );
+
+    expect(months[0].requests.map((r) => r.id)).toEqual(["d2", "d1"]);
+    expect(months[0].pending.map((r) => r.id)).toEqual(["p2", "p1"]);
+  });
+
+  it("skips a pending request with an unusable date", () => {
+    const months = buildHistoryMonths(
+      [request({ id: "bad", status: "pending", receivedAt: "not-a-date" })],
+      NOW
+    );
+
+    expect(months.every((m) => m.count === 0)).toBe(true);
+    expect(months.every((m) => m.pending.length === 0)).toBe(true);
+  });
+
+  it("buckets pending into an older month tab of its own", () => {
+    const months = buildHistoryMonths(
+      [
+        request({
+          id: "old",
+          status: "pending",
+          receivedAt: new Date(2025, 11, 4, 9).toISOString(),
+        }),
+      ],
+      NOW
+    );
+
+    expect(months.map((m) => m.key)).toEqual(["2026-08", "2026-07", "2025-12"]);
+    expect(months[2].pending.map((r) => r.id)).toEqual(["old"]);
+    expect(months[2].requests).toEqual([]);
+  });
+
+  it("never leaks a pending request into requests, which feeds the tiles", () => {
+    const months = buildHistoryMonths(
+      [
+        request({ id: "a", receivedAt: new Date(2026, 7, 2, 9).toISOString() }),
+        request({
+          id: "p",
+          status: "pending",
+          receivedAt: new Date(2026, 7, 6, 9).toISOString(),
+        }),
+        request({
+          id: "w",
+          status: "withdrawn",
+          receivedAt: new Date(2026, 6, 9, 9).toISOString(),
+        }),
+        request({
+          id: "p2",
+          status: "pending",
+          receivedAt: new Date(2026, 6, 11, 9).toISOString(),
+        }),
+      ],
+      NOW
+    );
+
+    for (const month of months) {
+      expect(month.requests.some((r) => r.status === "pending")).toBe(false);
+      expect(month.pending.every((r) => r.status === "pending")).toBe(true);
+    }
+  });
+
+  it("leaves the decided totals identical whether or not pending is passed in", () => {
+    const decided = [
+      request({ id: "a", receivedAt: new Date(2026, 7, 2, 9).toISOString() }),
+      request({
+        id: "b",
+        status: "rejected",
+        receivedAt: new Date(2026, 7, 17, 9).toISOString(),
+      }),
+    ];
+    const pendingRows = [
+      request({
+        id: "p",
+        status: "pending",
+        receivedAt: new Date(2026, 7, 18, 9).toISOString(),
+      }),
+    ];
+
+    const withoutPending = buildHistoryMonths(decided, NOW);
+    const withPending = buildHistoryMonths([...decided, ...pendingRows], NOW);
+
+    expect(withPending[0].requests.map((r) => r.id)).toEqual(
+      withoutPending[0].requests.map((r) => r.id)
+    );
+    expect(monthTotals(withPending[0].requests)).toEqual(
+      monthTotals(withoutPending[0].requests)
+    );
+  });
 });
 
 describe("decidedInMonth", () => {
