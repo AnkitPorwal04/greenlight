@@ -59,6 +59,12 @@ export interface StatsOutcomes {
   pending: number;
 }
 
+export interface StatsMonthTab {
+  key: string;
+  label: string;
+  count: number;
+}
+
 export interface StatsPayload {
   totalRequests: number;
   sinceDate: string;
@@ -66,6 +72,7 @@ export interface StatsPayload {
   byMonth: StatsMonth[];
   byEmployee: StatsEmployee[];
   byType: StatsType[];
+  entries: StatsEntry[];
 }
 
 const FALLBACK_TYPE = "Unspecified";
@@ -92,6 +99,60 @@ function monthLabel(d: Date): string {
     year: "numeric",
     timeZone: "UTC",
   });
+}
+
+function monthFromKey(key: string): Date | null {
+  const [year, month] = key.split("-").map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return null;
+  if (month < 1 || month > 12) return null;
+  return new Date(Date.UTC(year, month - 1, 1));
+}
+
+export function statsMonthKey(receivedAt: string): string {
+  const d = new Date(receivedAt);
+  if (!receivedAt || Number.isNaN(d.getTime())) return "";
+  return monthKey(d);
+}
+
+export function statsMonthShortLabel(key: string): string {
+  const d = monthFromKey(key);
+  return d ? monthLabel(d) : key;
+}
+
+export function statsMonthLabel(key: string): string {
+  const d = monthFromKey(key);
+  if (!d) return key;
+  return d.toLocaleDateString("en-GB", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+export function buildStatsMonths(
+  entries: StatsEntry[],
+  now: Date = new Date()
+): StatsMonthTab[] {
+  const counts = new Map<string, number>();
+  if (!Number.isNaN(now.getTime())) counts.set(monthKey(now), 0);
+
+  for (const entry of entries) {
+    const key = statsMonthKey(entry.receivedAt);
+    if (!key) continue;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([key, count]) => ({ key, label: statsMonthLabel(key), count }));
+}
+
+export function entriesInMonth(
+  entries: StatsEntry[],
+  key: string
+): StatsEntry[] {
+  if (!key) return [];
+  return entries.filter((entry) => statsMonthKey(entry.receivedAt) === key);
 }
 
 function round(value: number): number {
@@ -245,5 +306,6 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
     byMonth,
     byEmployee,
     byType,
+    entries: [...unique.values()],
   };
 }
