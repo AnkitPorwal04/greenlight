@@ -8,7 +8,13 @@ import type {
   StatsPayload,
 } from "@/lib/stats";
 import { ArtTray, EmptyState } from "./States";
-import { IconAlert, IconChevron, IconRefresh } from "./icons";
+import {
+  IconAlert,
+  IconChevron,
+  IconRefresh,
+  IconSearch,
+  IconX,
+} from "./icons";
 import { avatarTone, initials, leaveTypeColor, leaveTypeShort } from "./utils";
 
 const OTHER = "Other";
@@ -58,6 +64,26 @@ function formatNumber(n: number) {
 function shortMonth(label: string) {
   const [name, year] = label.split(" ");
   return year ? `${name} ${year.slice(-2)}` : name;
+}
+
+function memberKey(person: { code: string; name: string }) {
+  return `${person.code}-${person.name}`;
+}
+
+// A "YYYY-MM" bucket keyed off when the request mail was received — the same
+// basis as the Monthly pattern chart, so per-member months line up with it.
+function monthKeyOf(iso: string) {
+  const d = new Date(iso);
+  if (!iso || Number.isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthLabelOf(key: string) {
+  const [year, month] = key.split("-").map(Number);
+  return new Date(year, (month || 1) - 1, 1).toLocaleDateString("en-GB", {
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function breakdown(byType: Record<string, number>) {
@@ -157,6 +183,46 @@ function OutcomeChips({ person }: { person: StatsEmployee }) {
   );
 }
 
+function EntryRow({
+  entry,
+  color,
+}: {
+  entry: StatsEmployeeEntry;
+  color: string;
+}) {
+  const outcome = OUTCOME_BY_KEY[entry.status];
+  return (
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5 text-[13px]">
+      <span className="w-14 shrink-0 font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
+        {formatShortDay(entry.receivedAt)}
+      </span>
+      <span
+        title={entry.leaveType}
+        className="shrink-0 rounded-[3px] border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide"
+        style={{
+          color,
+          borderColor: `color-mix(in srgb, ${color} 35%, transparent)`,
+          background: `color-mix(in srgb, ${color} 10%, transparent)`,
+        }}
+      >
+        {leaveTypeShort(entry.leaveType)}
+      </span>
+      <span className="shrink-0 font-mono text-[12px] tabular-nums text-[var(--text-secondary)]">
+        {formatNumber(entry.numberOfDays)}d
+      </span>
+      <span
+        className={`ml-auto flex shrink-0 items-center gap-1.5 text-[12px] ${outcome.tone}`}
+      >
+        <span
+          aria-hidden="true"
+          className={`lamp-dot h-[5px] w-[5px] shrink-0 ${outcome.lamp}`}
+        />
+        {outcome.label}
+      </span>
+    </li>
+  );
+}
+
 function EntryList({
   id,
   entries,
@@ -171,46 +237,16 @@ function EntryList({
   return (
     <div id={id} className="rise-in pb-4 pl-8 sm:pl-[88px]">
       <ul className="divide-y divide-[var(--border)] border-l border-[var(--border)] pl-3 sm:pl-4">
-        {entries.map((entry, i) => {
-          const color = leaveTypeColor(
-            entry.leaveType,
-            typeIndex.get(entry.leaveType) ?? i
-          );
-          const outcome = OUTCOME_BY_KEY[entry.status];
-          return (
-            <li
-              key={`${entry.receivedAt}-${i}`}
-              className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5 text-[13px]"
-            >
-              <span className="w-14 shrink-0 font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
-                {formatShortDay(entry.receivedAt)}
-              </span>
-              <span
-                title={entry.leaveType}
-                className="shrink-0 rounded-[3px] border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide"
-                style={{
-                  color,
-                  borderColor: `color-mix(in srgb, ${color} 35%, transparent)`,
-                  background: `color-mix(in srgb, ${color} 10%, transparent)`,
-                }}
-              >
-                {leaveTypeShort(entry.leaveType)}
-              </span>
-              <span className="shrink-0 font-mono text-[12px] tabular-nums text-[var(--text-secondary)]">
-                {formatNumber(entry.numberOfDays)}d
-              </span>
-              <span
-                className={`ml-auto flex shrink-0 items-center gap-1.5 text-[12px] ${outcome.tone}`}
-              >
-                <span
-                  aria-hidden="true"
-                  className={`lamp-dot h-[5px] w-[5px] shrink-0 ${outcome.lamp}`}
-                />
-                {outcome.label}
-              </span>
-            </li>
-          );
-        })}
+        {entries.map((entry, i) => (
+          <EntryRow
+            key={`${entry.receivedAt}-${i}`}
+            entry={entry}
+            color={leaveTypeColor(
+              entry.leaveType,
+              typeIndex.get(entry.leaveType) ?? i
+            )}
+          />
+        ))}
       </ul>
     </div>
   );
@@ -444,6 +480,236 @@ function TopTakers({ data }: { data: StatsPayload }) {
   );
 }
 
+function MemberLookup({ data }: { data: StatsPayload }) {
+  const [query, setQuery] = useState("");
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [month, setMonth] = useState<string | null>(null);
+
+  const typeIndex = useMemo(
+    () => new Map(data.byType.map((t, i) => [t.type, i] as const)),
+    [data]
+  );
+
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return data.byEmployee
+      .filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)
+      )
+      .slice(0, 8);
+  }, [data, query]);
+
+  const selected = useMemo(
+    () =>
+      selectedKey
+        ? (data.byEmployee.find((p) => memberKey(p) === selectedKey) ?? null)
+        : null,
+    [data, selectedKey]
+  );
+
+  // Months this member has activity in, newest first.
+  const months = useMemo(() => {
+    if (!selected) return [];
+    const seen = new Set<string>();
+    for (const e of selected.entries) {
+      const key = monthKeyOf(e.receivedAt);
+      if (key) seen.add(key);
+    }
+    return [...seen].sort((a, b) => b.localeCompare(a));
+  }, [selected]);
+
+  // Fall back to the latest month whenever the picked one isn't valid for
+  // this member (e.g. right after switching members).
+  const activeMonth =
+    month && months.includes(month) ? month : (months[0] ?? null);
+
+  const monthEntries = useMemo(
+    () =>
+      selected && activeMonth
+        ? selected.entries.filter(
+            (e) => monthKeyOf(e.receivedAt) === activeMonth
+          )
+        : [],
+    [selected, activeMonth]
+  );
+
+  // Withdrawn leaves were never actually taken — keep them out of the headline
+  // count and days, matching how the rest of Stats treats them.
+  const taken = monthEntries.filter((e) => e.status !== "withdrawn");
+  const takenDays = taken.reduce((sum, e) => sum + e.numberOfDays, 0);
+  const withdrawnCount = monthEntries.length - taken.length;
+
+  if (data.byEmployee.length === 0) return null;
+
+  const pick = (person: StatsEmployee) => {
+    setSelectedKey(memberKey(person));
+    setMonth(null);
+    setQuery("");
+  };
+
+  return (
+    <section className="mt-14">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+        <Label>Member lookup</Label>
+        <span className="font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
+          {data.byEmployee.length}{" "}
+          {data.byEmployee.length === 1 ? "member" : "members"}
+        </span>
+      </div>
+
+      <div className="relative mt-5 max-w-sm">
+        <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--text-muted)]" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search any member by name or code"
+          aria-label="Search member by name or employee code"
+          className="field w-full rounded-md py-2 pl-8 pr-10 text-[13px] transition"
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => setQuery("")}
+            aria-label="Clear search"
+            className="press absolute right-0.5 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded text-[var(--text-muted)] transition hover:text-[var(--text-primary)]"
+          >
+            <IconX className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+
+      {query.trim() &&
+        (matches.length > 0 ? (
+          <ul className="mt-2 max-w-sm divide-y divide-[var(--border)] overflow-hidden rounded-md border border-[var(--border)]">
+            {matches.map((person) => (
+              <li key={memberKey(person)}>
+                <button
+                  type="button"
+                  onClick={() => pick(person)}
+                  className="press flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-[var(--surface-raised)]"
+                >
+                  <span
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${avatarTone(
+                      person.name
+                    )}`}
+                  >
+                    {initials(person.name)}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-medium text-[var(--text-primary)]">
+                      {person.name}
+                    </span>
+                    <span className="block truncate font-mono text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+                      {person.code}
+                    </span>
+                  </span>
+                  <span className="shrink-0 font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
+                    {formatNumber(person.days)}d
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-3 text-[12px] text-[var(--text-muted)]">
+            No member’s name or code contains “{query.trim()}”.
+          </p>
+        ))}
+
+      {selected && (
+        <div className="rise-in mt-6 rounded-lg border border-[var(--border)] p-4 sm:p-5">
+          <div className="flex items-center gap-3">
+            <span
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${avatarTone(
+                selected.name
+              )}`}
+            >
+              {initials(selected.name)}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[15px] font-semibold tracking-tight text-[var(--text-primary)]">
+                {selected.name}
+              </span>
+              <span className="block truncate font-mono text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
+                {selected.code}
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedKey(null)}
+              className="press shrink-0 rounded-md border border-[var(--border-strong)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition hover:border-[var(--accent-ring)] hover:text-[var(--text-primary)]"
+            >
+              Change
+            </button>
+          </div>
+
+          {months.length > 0 ? (
+            <>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {months.map((key) => {
+                  const on = key === activeMonth;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setMonth(key)}
+                      aria-pressed={on}
+                      className={`press rounded-full border px-3 py-1 font-mono text-[11px] uppercase tracking-wide transition ${
+                        on
+                          ? "border-[var(--accent-ring)] bg-[var(--accent-soft)] text-[var(--text-primary)]"
+                          : "border-[var(--border-strong)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                      }`}
+                    >
+                      {monthLabelOf(key)}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-5 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-[var(--border)] pt-4">
+                <span className="font-mono text-[24px] font-medium leading-none tracking-tight tabular-nums text-[var(--text-primary)]">
+                  {taken.length}
+                </span>
+                <span className="text-[12px] text-[var(--text-secondary)]">
+                  {taken.length === 1 ? "leave" : "leaves"} taken
+                </span>
+                <span className="text-[var(--text-muted)]">·</span>
+                <span className="font-mono text-[13px] tabular-nums text-[var(--text-secondary)]">
+                  {formatNumber(takenDays)} days
+                </span>
+                {withdrawnCount > 0 && (
+                  <span className="ml-auto text-[11px] text-[var(--text-muted)]">
+                    {withdrawnCount} withdrawn
+                  </span>
+                )}
+              </div>
+
+              <ul className="mt-2 divide-y divide-[var(--border)]">
+                {monthEntries.map((entry, i) => (
+                  <EntryRow
+                    key={`${entry.receivedAt}-${i}`}
+                    entry={entry}
+                    color={leaveTypeColor(
+                      entry.leaveType,
+                      typeIndex.get(entry.leaveType) ?? i
+                    )}
+                  />
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className="mt-4 text-[12px] text-[var(--text-muted)]">
+              No leave requests recorded for this member.
+            </p>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function ByType({ data }: { data: StatsPayload }) {
   if (data.byType.length === 0) return null;
   return (
@@ -548,6 +814,7 @@ export function StatsView({
 
       <MonthlyPattern data={data} />
       <TopTakers data={data} />
+      <MemberLookup data={data} />
       <ByType data={data} />
     </div>
   );
