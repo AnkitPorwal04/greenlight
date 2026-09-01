@@ -127,6 +127,59 @@ describe("toCalendarLeaves", () => {
     ];
     expect(toCalendarLeaves(rows).map((l) => l.id)).toEqual(["asha"]);
   });
+
+  it("shows work from home re-applied for the same span after the cancellation", () => {
+    const rows = [
+      candidate({
+        id: "original",
+        status: "approved",
+        receivedAt: "2026-08-10T09:00:00.000Z",
+      }),
+      candidate({
+        id: "cx",
+        kind: "cancellation",
+        status: "approved",
+        receivedAt: "2026-08-12T09:00:00.000Z",
+      }),
+      candidate({
+        id: "wfh",
+        leaveType: "Work From Home",
+        status: "approved",
+        receivedAt: "2026-08-13T09:00:00.000Z",
+      }),
+    ];
+    expect(toCalendarLeaves(rows).map((l) => l.id)).toEqual(["wfh"]);
+  });
+
+  it("still hides a leave applied before the cancellation that cancels it", () => {
+    const rows = [
+      candidate({
+        id: "original",
+        status: "approved",
+        receivedAt: "2026-08-10T09:00:00.000Z",
+      }),
+      candidate({
+        id: "cx",
+        kind: "cancellation",
+        status: "approved",
+        receivedAt: "2026-08-12T09:00:00.000Z",
+      }),
+    ];
+    expect(toCalendarLeaves(rows)).toEqual([]);
+  });
+
+  it("hides a re-application whose arrival time is unreadable", () => {
+    const rows = [
+      candidate({
+        id: "cx",
+        kind: "cancellation",
+        status: "approved",
+        receivedAt: "2026-08-12T09:00:00.000Z",
+      }),
+      candidate({ id: "wfh", status: "approved", receivedAt: "who knows" }),
+    ];
+    expect(toCalendarLeaves(rows)).toEqual([]);
+  });
 });
 
 describe("countsAsSettled", () => {
