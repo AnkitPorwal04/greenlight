@@ -191,26 +191,63 @@ export function buildStatsMonths(
     .map(([key, count]) => ({ key, label: statsMonthLabel(key), count }));
 }
 
+function statsEmployeeKey(entry: StatsEntry): string {
+  const code = entry.employeeCode.trim().toUpperCase();
+  const name = entry.employeeName.trim().toLowerCase();
+  return code || name || `#${entry.id}`;
+}
+
+function arrivedLater(candidate: StatsEntry, current: StatsEntry): boolean {
+  const received = receivedTime(candidate.receivedAt);
+  const receivedCurrent = receivedTime(current.receivedAt);
+  if (received !== receivedCurrent) return received > receivedCurrent;
+
+  return candidate.id > current.id;
+}
+
+function dayOwners(
+  entries: StatsEntry[],
+  spans: string[][]
+): Map<string, number> {
+  const owners = new Map<string, number>();
+  spans.forEach((days, index) => {
+    for (const day of days) {
+      const dayKey = `${statsEmployeeKey(entries[index])}|${day}`;
+      const current = owners.get(dayKey);
+      if (current === undefined || arrivedLater(entries[index], entries[current])) {
+        owners.set(dayKey, index);
+      }
+    }
+  });
+  return owners;
+}
+
 export function entriesInMonth(
   entries: StatsEntry[],
   key: string
 ): StatsEntry[] {
   if (!key) return [];
 
+  const spans = entries.map(coveredDays);
+  const owners = dayOwners(entries, spans);
+
   const out: StatsEntry[] = [];
-  for (const entry of entries) {
-    const days = coveredDays(entry);
+  entries.forEach((entry, index) => {
+    const days = spans[index];
     if (days.length === 0) {
       if (statsMonthKey(entry.receivedAt) === key) out.push(entry);
-      continue;
+      return;
     }
 
-    const won = days.filter((day) => monthOfYmd(day) === key);
-    if (won.length === 0) continue;
+    const inMonth = days.filter((day) => monthOfYmd(day) === key);
+    if (inMonth.length === 0) return;
 
+    const won = inMonth.filter(
+      (day) => owners.get(`${statsEmployeeKey(entry)}|${day}`) === index
+    );
     const share = safeDays(entry.numberOfDays) / days.length;
     out.push({ ...entry, numberOfDays: round(share * won.length) });
-  }
+  });
   return out;
 }
 
