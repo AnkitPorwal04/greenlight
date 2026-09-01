@@ -17,6 +17,8 @@ function entry(over: Partial<StatsEntry> = {}): StatsEntry {
     employeeCode: "e101",
     leaveType: "Casual Leave",
     numberOfDays: 1,
+    fromDate: "",
+    toDate: "",
     receivedAt: "2026-08-14T09:00:00.000Z",
     ...over,
   };
@@ -346,6 +348,182 @@ describe("entriesInMonth", () => {
 
   it("returns nothing for an empty month key", () => {
     expect(entriesInMonth(rows, "")).toEqual([]);
+  });
+});
+
+describe("months follow the leave dates, not the mail arrival", () => {
+  const acceptedLate = entry({
+    id: "late",
+    fromDate: "03 Sep 2026",
+    toDate: "04 Sep 2026",
+    numberOfDays: 2,
+    receivedAt: "2026-08-28T09:00:00.000Z",
+  });
+
+  it("puts a September leave in September even though the mail arrived in August", () => {
+    expect(entriesInMonth([acceptedLate], "2026-09").map((e) => e.id)).toEqual([
+      "late",
+    ]);
+    expect(entriesInMonth([acceptedLate], "2026-08")).toEqual([]);
+  });
+
+  it("offers the month tab for the leave dates rather than the arrival month", () => {
+    const months = buildStatsMonths(
+      [acceptedLate],
+      new Date("2026-09-15T10:00:00.000Z")
+    );
+    expect(months).toEqual([
+      { key: "2026-09", label: "September 2026", count: 1 },
+    ]);
+  });
+
+  it("buckets the monthly chart by the leave dates too", () => {
+    const stats = aggregateStats([acceptedLate]);
+    expect(stats.byMonth).toHaveLength(1);
+    expect(stats.byMonth[0].month).toBe("Sept 2026");
+  });
+});
+
+describe("a leave crossing a month boundary", () => {
+  const crossing = entry({
+    id: "cross",
+    fromDate: "30 Aug 2026",
+    toDate: "02 Sep 2026",
+    numberOfDays: 4,
+    receivedAt: "2026-08-20T09:00:00.000Z",
+  });
+
+  it("gives each month only the days that fall inside it", () => {
+    expect(entriesInMonth([crossing], "2026-08")[0].numberOfDays).toBe(2);
+    expect(entriesInMonth([crossing], "2026-09")[0].numberOfDays).toBe(2);
+  });
+
+  it("splits the days without inventing or losing any", () => {
+    const august = entriesInMonth([crossing], "2026-08")[0].numberOfDays;
+    const september = entriesInMonth([crossing], "2026-09")[0].numberOfDays;
+    expect(august + september).toBe(4);
+  });
+
+  it("counts the request in both months it touches", () => {
+    const months = buildStatsMonths(
+      [crossing],
+      new Date("2026-09-15T10:00:00.000Z")
+    );
+    expect(months.map((m) => [m.key, m.count])).toEqual([
+      ["2026-09", 1],
+      ["2026-08", 1],
+    ]);
+  });
+
+  it("charges each month's own total with just its portion", () => {
+    const august = aggregateStats(entriesInMonth([crossing], "2026-08"));
+    expect(august.byEmployee[0].days).toBe(2);
+    expect(august.byType[0].days).toBe(2);
+  });
+});
+
+describe("half day requests", () => {
+  const halfDay = entry({
+    id: "half",
+    fromDate: "10 Sep 2026",
+    toDate: "10 Sep 2026",
+    numberOfDays: 0.5,
+    receivedAt: "2026-09-09T09:00:00.000Z",
+  });
+
+  it("stays half a day instead of being rounded up to a whole one", () => {
+    expect(entriesInMonth([halfDay], "2026-09")[0].numberOfDays).toBe(0.5);
+    expect(aggregateStats(entriesInMonth([halfDay], "2026-09")).byEmployee[0].days).toBe(0.5);
+  });
+
+  it("splits proportionally rather than one day per covered day", () => {
+    const twoHalves = entry({
+      id: "spread",
+      fromDate: "31 Aug 2026",
+      toDate: "01 Sep 2026",
+      numberOfDays: 1,
+      receivedAt: "2026-08-30T09:00:00.000Z",
+    });
+
+    expect(entriesInMonth([twoHalves], "2026-08")[0].numberOfDays).toBe(0.5);
+    expect(entriesInMonth([twoHalves], "2026-09")[0].numberOfDays).toBe(0.5);
+  });
+});
+
+describe("entries whose leave dates cannot be read", () => {
+  it("falls back to the month the mail arrived in", () => {
+    const rows = [
+      entry({ id: "junk", fromDate: "next week", toDate: "sometime" }),
+      entry({ id: "blank", fromDate: "", toDate: "" }),
+    ];
+
+    expect(entriesInMonth(rows, "2026-08").map((e) => e.id)).toEqual([
+      "junk",
+      "blank",
+    ]);
+  });
+
+  it("keeps the whole request in that single month", () => {
+    const rows = [
+      entry({ id: "junk", fromDate: "not a date", toDate: "", numberOfDays: 3 }),
+    ];
+    expect(entriesInMonth(rows, "2026-08")[0].numberOfDays).toBe(3);
+  });
+
+  it("does not vanish when only the end date is unreadable", () => {
+    const rows = [
+      entry({
+        id: "openended",
+        fromDate: "05 Sep 2026",
+        toDate: "whenever",
+        numberOfDays: 1,
+        receivedAt: "2026-08-01T09:00:00.000Z",
+      }),
+    ];
+    expect(entriesInMonth(rows, "2026-09").map((e) => e.id)).toEqual([
+      "openended",
+    ]);
+  });
+
+  it("refuses to expand an absurd date range and buckets it by arrival", () => {
+    const rows = [
+      entry({
+        id: "absurd",
+        fromDate: "01 Jan 2026",
+        toDate: "01 Jan 2030",
+        numberOfDays: 2,
+        receivedAt: "2026-08-14T09:00:00.000Z",
+      }),
+    ];
+
+    expect(entriesInMonth(rows, "2026-08").map((e) => e.id)).toEqual([
+      "absurd",
+    ]);
+    expect(entriesInMonth(rows, "2026-08")[0].numberOfDays).toBe(2);
+  });
+});
+
+describe("a withdrawn leave inside a month", () => {
+  const pulled = entry({
+    id: "pulled",
+    fromDate: "12 Sep 2026",
+    toDate: "12 Sep 2026",
+    numberOfDays: 1,
+    receivedAt: "2026-08-30T09:00:00.000Z",
+    status: "withdrawn",
+  });
+
+  it("still shows up in the month its leave dates fall in", () => {
+    expect(entriesInMonth([pulled], "2026-09").map((e) => e.id)).toEqual([
+      "pulled",
+    ]);
+  });
+
+  it("keeps its outcome tile without adding days", () => {
+    const september = aggregateStats(entriesInMonth([pulled], "2026-09"));
+    expect(september.outcomes.withdrawn).toBe(1);
+    expect(september.outcomes.applied).toBe(0);
+    expect(september.byEmployee[0].days).toBe(0);
   });
 });
 

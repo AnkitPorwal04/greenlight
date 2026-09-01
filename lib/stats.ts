@@ -1,5 +1,11 @@
 import type { LeaveStatus } from "./types";
 import { filterByTeam } from "./team";
+import {
+  addDaysYmd,
+  isValidYmd,
+  leaveCoversDay,
+  parseLeaveDate,
+} from "./leave-dates";
 
 export interface StatsEntry {
   id: string;
@@ -7,6 +13,8 @@ export interface StatsEntry {
   employeeCode: string;
   leaveType: string;
   numberOfDays: number;
+  fromDate: string;
+  toDate: string;
   receivedAt: string;
   status?: LeaveStatus;
 }
@@ -129,6 +137,42 @@ export function statsMonthLabel(key: string): string {
   });
 }
 
+const UNUSABLE_SPAN_DAYS = 366;
+
+function monthOfYmd(ymd: string): string {
+  return ymd.slice(0, 7);
+}
+
+function entrySpan(entry: StatsEntry): { from: string; to: string } | null {
+  const from = parseLeaveDate(entry.fromDate);
+  const to = parseLeaveDate(entry.toDate) ?? from;
+  if (from === null || to === null) return null;
+  return from <= to ? { from, to } : { from: to, to: from };
+}
+
+function coveredDays(entry: StatsEntry): string[] {
+  const span = entrySpan(entry);
+  if (span === null) return [];
+
+  const days: string[] = [];
+  let day = span.from;
+  while (isValidYmd(day) && leaveCoversDay(span.from, span.to, day)) {
+    if (days.length >= UNUSABLE_SPAN_DAYS) return [];
+    days.push(day);
+    day = addDaysYmd(day, 1);
+  }
+  return days;
+}
+
+function entryMonthKeys(entry: StatsEntry): string[] {
+  const days = coveredDays(entry);
+  if (days.length === 0) {
+    const fallback = statsMonthKey(entry.receivedAt);
+    return fallback ? [fallback] : [];
+  }
+  return [...new Set(days.map(monthOfYmd))];
+}
+
 export function buildStatsMonths(
   entries: StatsEntry[],
   now: Date = new Date()
@@ -137,9 +181,9 @@ export function buildStatsMonths(
   if (!Number.isNaN(now.getTime())) counts.set(monthKey(now), 0);
 
   for (const entry of entries) {
-    const key = statsMonthKey(entry.receivedAt);
-    if (!key) continue;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
+    for (const key of entryMonthKeys(entry)) {
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
   }
 
   return [...counts.entries()]
@@ -152,7 +196,22 @@ export function entriesInMonth(
   key: string
 ): StatsEntry[] {
   if (!key) return [];
-  return entries.filter((entry) => statsMonthKey(entry.receivedAt) === key);
+
+  const out: StatsEntry[] = [];
+  for (const entry of entries) {
+    const days = coveredDays(entry);
+    if (days.length === 0) {
+      if (statsMonthKey(entry.receivedAt) === key) out.push(entry);
+      continue;
+    }
+
+    const won = days.filter((day) => monthOfYmd(day) === key);
+    if (won.length === 0) continue;
+
+    const share = safeDays(entry.numberOfDays) / days.length;
+    out.push({ ...entry, numberOfDays: round(share * won.length) });
+  }
+  return out;
 }
 
 function round(value: number): number {
@@ -218,18 +277,19 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
 
     if (validDate) earliest = Math.min(earliest, received.getTime());
 
-    if (counted && validDate) {
-      const key = monthKey(received);
-      let slot = months.get(key);
-      if (!slot) {
-        slot = {
-          label: key,
-          month: { month: monthLabel(received), total: 0, byType: {} },
-        };
-        months.set(key, slot);
+    if (counted) {
+      for (const key of entryMonthKeys(entry)) {
+        let slot = months.get(key);
+        if (!slot) {
+          slot = {
+            label: key,
+            month: { month: statsMonthShortLabel(key), total: 0, byType: {} },
+          };
+          months.set(key, slot);
+        }
+        slot.month.total += 1;
+        bump(slot.month.byType, type, 1);
       }
-      slot.month.total += 1;
-      bump(slot.month.byType, type, 1);
     }
 
     const code = entry.employeeCode.trim().toUpperCase();
