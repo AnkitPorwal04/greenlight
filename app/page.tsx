@@ -337,8 +337,6 @@ export default function Home() {
         : [...filteredAwaiting, ...filtered],
     [filteredAwaiting, filtered]
   );
-  const shownCount = filtered.length + filteredAwaiting.length;
-  const totalCount = visible.length + awaiting.length;
 
   const recordOutcome = useCallback(
     async (ids: string[], status: RecordedStatus = "handled") => {
@@ -922,8 +920,8 @@ export default function Home() {
                     )}
                     <span className="font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
                       {query.trim()
-                        ? `${shownCount}/${totalCount}`
-                        : `${totalCount} ${totalCount === 1 ? "request" : "requests"}`}
+                        ? `${filtered.length}/${visible.length}`
+                        : `${visible.length} ${visible.length === 1 ? "request" : "requests"}`}
                     </span>
                   </div>
                 </div>
