@@ -70,20 +70,21 @@ function memberKey(person: { code: string; name: string }) {
   return `${person.code}-${person.name}`;
 }
 
-// A "YYYY-MM" bucket keyed off when the request mail was received — the same
-// basis as the Monthly pattern chart, so per-member months line up with it.
+// A "YYYY-MM" bucket keyed off when the request mail was received. Uses UTC to
+// match the server-side monthKey in lib/stats.ts exactly, so per-member months
+// line up with the Monthly pattern chart regardless of the browser timezone.
 function monthKeyOf(iso: string) {
   const d = new Date(iso);
   if (!iso || Number.isNaN(d.getTime())) return "";
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 function monthLabelOf(key: string) {
   const [year, month] = key.split("-").map(Number);
-  return new Date(year, (month || 1) - 1, 1).toLocaleDateString("en-GB", {
-    month: "short",
-    year: "numeric",
-  });
+  return new Date(Date.UTC(year, (month || 1) - 1, 1)).toLocaleDateString(
+    "en-GB",
+    { month: "short", year: "numeric", timeZone: "UTC" }
+  );
 }
 
 function breakdown(byType: Record<string, number>) {
