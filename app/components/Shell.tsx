@@ -78,16 +78,18 @@ export function MonthTabs({
   months,
   active,
   onSelect,
+  label = "History month",
 }: {
   months: { key: string; label: string; count: number }[];
   active: string;
   onSelect: (key: string) => void;
+  label?: string;
 }) {
   if (months.length === 0) return null;
 
   return (
     <nav
-      aria-label="History month"
+      aria-label={label}
       className="scrollbar-none -mb-px flex h-11 items-center gap-6 overflow-x-auto overflow-y-hidden"
     >
       {months.map((month) => (
