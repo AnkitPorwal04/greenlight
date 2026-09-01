@@ -289,11 +289,7 @@ export default function Home() {
     [requests]
   );
   const historyMonths = useMemo(
-    () =>
-      buildHistoryMonths(
-        (historyRequests ?? []).filter((r) => r.status !== "pending"),
-        new Date()
-      ),
+    () => buildHistoryMonths(historyRequests ?? [], new Date()),
     [historyRequests]
   );
   const activeMonth =
@@ -323,11 +319,24 @@ export default function Home() {
       : view === "history"
         ? (activeMonth?.requests ?? NO_REQUESTS)
         : NO_REQUESTS;
+  const awaiting =
+    view === "history" ? (activeMonth?.pending ?? NO_REQUESTS) : NO_REQUESTS;
   const filtered = useMemo(
     () => visible.filter((r) => matchesQuery(r, query)),
     [visible, query]
   );
+  const filteredAwaiting = useMemo(
+    () => awaiting.filter((r) => matchesQuery(r, query)),
+    [awaiting, query]
+  );
   const groups = useMemo(() => groupByDate(filtered), [filtered]);
+  const navigable = useMemo(
+    () =>
+      filteredAwaiting.length === 0
+        ? filtered
+        : [...filteredAwaiting, ...filtered],
+    [filteredAwaiting, filtered]
+  );
 
   const recordOutcome = useCallback(
     async (ids: string[], status: RecordedStatus = "handled") => {
@@ -590,23 +599,23 @@ export default function Home() {
       const up = e.key === "ArrowUp" || key === "k";
 
       if (down || up) {
-        if (filtered.length === 0) return;
+        if (navigable.length === 0) return;
         e.preventDefault();
         keyboardNavRef.current = true;
         setSelectedId((current) => {
-          const index = filtered.findIndex((r) => r.id === current);
-          if (index === -1) return filtered[down ? 0 : filtered.length - 1].id;
+          const index = navigable.findIndex((r) => r.id === current);
+          if (index === -1) return navigable[down ? 0 : navigable.length - 1].id;
           const next = Math.min(
-            filtered.length - 1,
+            navigable.length - 1,
             Math.max(0, index + (down ? 1 : -1))
           );
-          return filtered[next].id;
+          return navigable[next].id;
         });
         return;
       }
 
       if (!["a", "r", "h", "e"].includes(key)) return;
-      const row = filtered.find((r) => r.id === selectedId);
+      const row = navigable.find((r) => r.id === selectedId);
       if (!row || busyIds.includes(row.id)) return;
 
       if (key === "e") {
@@ -626,9 +635,9 @@ export default function Home() {
   }, [
     busyIds,
     connected,
-    filtered,
     focusSearch,
     modalOpen,
+    navigable,
     openDecision,
     selectedId,
   ]);
@@ -846,6 +855,52 @@ export default function Home() {
                   </div>
                 )}
 
+                {view === "history" &&
+                  !showSkeleton &&
+                  filteredAwaiting.length > 0 && (
+                    <section aria-label="Awaiting decision" className="mt-10">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <h2 className="text-[10px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
+                          {activeMonth
+                            ? `Awaiting decision · ${activeMonth.label}`
+                            : "Awaiting decision"}
+                        </h2>
+                        <span className="font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
+                          {query.trim()
+                            ? `${filteredAwaiting.length}/${awaiting.length}`
+                            : `${awaiting.length} ${awaiting.length === 1 ? "request" : "requests"}`}
+                        </span>
+                      </div>
+                      <div className="mt-5 divide-y divide-[var(--border)] border-y border-[var(--border)]">
+                        {filteredAwaiting.map((r) => (
+                          <RequestRow
+                            key={r.id}
+                            request={r}
+                            exiting={exiting.includes(r.id)}
+                            pulse={
+                              pulse?.id === r.id ? pulse.action : undefined
+                            }
+                            selected={selectedId === r.id}
+                            busy={busyIds.includes(r.id)}
+                            onSelect={() => {
+                              keyboardNavRef.current = false;
+                              setSelectedId(r.id);
+                            }}
+                            onDecide={(action) => openDecision(r, action)}
+                            onMark={() => setOutcomeFor(r)}
+                            onUndo={() => undoDecision(r)}
+                            onViewEmail={() => setEmailModal(r)}
+                            onDismiss={
+                              r.source === "direct"
+                                ? () => dismissRequest(r)
+                                : undefined
+                            }
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
                 <div className="mt-10 flex items-baseline justify-between gap-3">
                   <h2 className="text-[10px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
                     {view === "dashboard"
@@ -875,7 +930,7 @@ export default function Home() {
                   {showSkeleton ? (
                     <SkeletonList />
                   ) : groups.length === 0 ? (
-                    query.trim() ? (
+                    filteredAwaiting.length > 0 ? null : query.trim() ? (
                       <EmptyState
                         art={<ArtSearch />}
                         title="Nothing matches that search"

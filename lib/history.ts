@@ -8,6 +8,7 @@ export interface HistoryMonth {
   label: string;
   count: number;
   requests: LeaveRequest[];
+  pending: LeaveRequest[];
 }
 
 export interface MonthTotals {
@@ -55,6 +56,10 @@ function receivedTime(value: string): number {
   return Number.isNaN(ts) ? 0 : ts;
 }
 
+function newestFirst(a: LeaveRequest, b: LeaveRequest): number {
+  return receivedTime(b.receivedAt) - receivedTime(a.receivedAt);
+}
+
 export function decidedInMonth(
   requests: LeaveRequest[],
   key: string
@@ -86,33 +91,41 @@ export function monthTotals(requests: LeaveRequest[]): MonthTotals {
   return totals;
 }
 
+interface MonthBucket {
+  decided: LeaveRequest[];
+  pending: LeaveRequest[];
+}
+
 export function buildHistoryMonths(
   requests: LeaveRequest[],
   now: Date = new Date(),
   minMonths: number = DEFAULT_HISTORY_MONTHS
 ): HistoryMonth[] {
-  const buckets = new Map<string, LeaveRequest[]>();
+  const buckets = new Map<string, MonthBucket>();
   for (let back = 0; back < Math.max(1, minMonths); back += 1) {
-    buckets.set(monthKey(monthStart(now, back)), []);
+    buckets.set(monthKey(monthStart(now, back)), { decided: [], pending: [] });
   }
 
   for (const request of requests) {
     const received = new Date(request.receivedAt);
     if (Number.isNaN(received.getTime())) continue;
     const key = monthKey(received);
-    const bucket = buckets.get(key);
-    if (bucket) bucket.push(request);
-    else buckets.set(key, [request]);
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { decided: [], pending: [] };
+      buckets.set(key, bucket);
+    }
+    if (request.status === "pending") bucket.pending.push(request);
+    else bucket.decided.push(request);
   }
 
   return [...buckets.entries()]
     .sort((a, b) => b[0].localeCompare(a[0]))
-    .map(([key, items]) => ({
+    .map(([key, bucket]) => ({
       key,
       label: monthLabel(monthFromKey(key), now),
-      count: items.length,
-      requests: items.sort(
-        (a, b) => receivedTime(b.receivedAt) - receivedTime(a.receivedAt)
-      ),
+      count: bucket.decided.length + bucket.pending.length,
+      requests: bucket.decided.sort(newestFirst),
+      pending: bucket.pending.sort(newestFirst),
     }));
 }
