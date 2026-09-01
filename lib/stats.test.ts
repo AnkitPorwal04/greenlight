@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { aggregateStats, aggregateStatsForTeam, type StatsEntry } from "./stats";
+import {
+  aggregateStats,
+  aggregateStatsForTeam,
+  buildStatsMonths,
+  entriesInMonth,
+  statsMonthKey,
+  statsMonthLabel,
+  statsMonthShortLabel,
+  type StatsEntry,
+} from "./stats";
 
 function entry(over: Partial<StatsEntry> = {}): StatsEntry {
   return {
@@ -168,6 +177,231 @@ describe("month bucketing", () => {
 
     expect(stats.byMonth).toHaveLength(1);
     expect(stats.byMonth[0].month).toBe("Aug 2026");
+  });
+});
+
+describe("statsMonthKey", () => {
+  it("buckets an ISO string into its UTC month", () => {
+    expect(statsMonthKey("2026-09-15T10:00:00.000Z")).toBe("2026-09");
+  });
+
+  it("keeps a late-evening UTC timestamp in the month it belongs to", () => {
+    expect(statsMonthKey("2026-08-31T23:30:00.000Z")).toBe("2026-08");
+  });
+
+  it("pads single digit months", () => {
+    expect(statsMonthKey("2026-01-05T00:00:00.000Z")).toBe("2026-01");
+  });
+
+  it("returns no bucket for a missing or unparseable date", () => {
+    expect(statsMonthKey("")).toBe("");
+    expect(statsMonthKey("not a date")).toBe("");
+  });
+});
+
+describe("stats month labels", () => {
+  it("spells the month out in full for the selected month", () => {
+    expect(statsMonthLabel("2026-09")).toBe("September 2026");
+    expect(statsMonthLabel("2026-01")).toBe("January 2026");
+  });
+
+  it("keeps the short form used by the per-member chips", () => {
+    expect(statsMonthShortLabel("2026-09")).toBe("Sept 2026");
+    expect(statsMonthShortLabel("2026-08")).toBe("Aug 2026");
+  });
+
+  it("hands back an unparseable key untouched instead of showing Invalid Date", () => {
+    expect(statsMonthLabel("")).toBe("");
+    expect(statsMonthLabel("nonsense")).toBe("nonsense");
+    expect(statsMonthLabel("2026-13")).toBe("2026-13");
+    expect(statsMonthShortLabel("nonsense")).toBe("nonsense");
+  });
+});
+
+describe("buildStatsMonths", () => {
+  const now = new Date("2026-09-15T10:00:00.000Z");
+
+  it("always offers the current month even with no data at all", () => {
+    expect(buildStatsMonths([], now)).toEqual([
+      { key: "2026-09", label: "September 2026", count: 0 },
+    ]);
+  });
+
+  it("still offers the current month when every entry is older", () => {
+    const months = buildStatsMonths(
+      [entry({ id: "a", receivedAt: "2026-08-04T09:00:00.000Z" })],
+      now
+    );
+
+    expect(months).toEqual([
+      { key: "2026-09", label: "September 2026", count: 0 },
+      { key: "2026-08", label: "August 2026", count: 1 },
+    ]);
+  });
+
+  it("counts every entry in its month, newest month first", () => {
+    const months = buildStatsMonths(
+      [
+        entry({ id: "a", receivedAt: "2026-07-04T09:00:00.000Z" }),
+        entry({ id: "b", receivedAt: "2026-09-02T09:00:00.000Z" }),
+        entry({ id: "c", receivedAt: "2026-08-11T09:00:00.000Z" }),
+        entry({ id: "d", receivedAt: "2026-08-27T09:00:00.000Z" }),
+      ],
+      now
+    );
+
+    expect(months.map((m) => m.key)).toEqual([
+      "2026-09",
+      "2026-08",
+      "2026-07",
+    ]);
+    expect(months.map((m) => m.count)).toEqual([1, 2, 1]);
+  });
+
+  it("orders across a year boundary by date, not by month name", () => {
+    const months = buildStatsMonths(
+      [
+        entry({ id: "a", receivedAt: "2025-12-04T09:00:00.000Z" }),
+        entry({ id: "b", receivedAt: "2026-01-04T09:00:00.000Z" }),
+      ],
+      new Date("2026-01-20T10:00:00.000Z")
+    );
+
+    expect(months.map((m) => m.key)).toEqual(["2026-01", "2025-12"]);
+    expect(months.map((m) => m.label)).toEqual([
+      "January 2026",
+      "December 2025",
+    ]);
+  });
+
+  it("counts a withdrawn request in its month like any other", () => {
+    const months = buildStatsMonths(
+      [
+        entry({ id: "a", receivedAt: "2026-09-02T09:00:00.000Z" }),
+        entry({
+          id: "b",
+          receivedAt: "2026-09-06T09:00:00.000Z",
+          status: "withdrawn",
+        }),
+      ],
+      now
+    );
+
+    expect(months).toEqual([
+      { key: "2026-09", label: "September 2026", count: 2 },
+    ]);
+  });
+
+  it("never lets an unparseable date fall into the current month", () => {
+    const months = buildStatsMonths(
+      [
+        entry({ id: "bad", receivedAt: "not a date" }),
+        entry({ id: "blank", receivedAt: "" }),
+      ],
+      now
+    );
+
+    expect(months).toEqual([
+      { key: "2026-09", label: "September 2026", count: 0 },
+    ]);
+  });
+
+  it("survives an unusable clock without inventing a month", () => {
+    const months = buildStatsMonths(
+      [entry({ id: "a", receivedAt: "2026-08-04T09:00:00.000Z" })],
+      new Date("nope")
+    );
+
+    expect(months).toEqual([
+      { key: "2026-08", label: "August 2026", count: 1 },
+    ]);
+  });
+});
+
+describe("entriesInMonth", () => {
+  const rows = [
+    entry({ id: "a", receivedAt: "2026-08-04T09:00:00.000Z" }),
+    entry({ id: "b", receivedAt: "2026-09-02T09:00:00.000Z" }),
+    entry({ id: "c", receivedAt: "2026-09-28T09:00:00.000Z" }),
+    entry({ id: "bad", receivedAt: "not a date" }),
+  ];
+
+  it("returns only the entries received in that month", () => {
+    expect(entriesInMonth(rows, "2026-09").map((e) => e.id)).toEqual([
+      "b",
+      "c",
+    ]);
+    expect(entriesInMonth(rows, "2026-08").map((e) => e.id)).toEqual(["a"]);
+  });
+
+  it("returns nothing for a month with no entries", () => {
+    expect(entriesInMonth(rows, "2026-07")).toEqual([]);
+  });
+
+  it("never returns an entry whose date could not be read", () => {
+    for (const key of ["2026-08", "2026-09", ""]) {
+      expect(entriesInMonth(rows, key).some((e) => e.id === "bad")).toBe(false);
+    }
+  });
+
+  it("returns nothing for an empty month key", () => {
+    expect(entriesInMonth(rows, "")).toEqual([]);
+  });
+});
+
+describe("payload entries", () => {
+  it("carries the deduped entry list the payload was built from", () => {
+    const stats = aggregateStats([
+      entry({ id: "a" }),
+      entry({ id: "a" }),
+      entry({ id: "b" }),
+    ]);
+
+    expect(stats.entries.map((e) => e.id)).toEqual(["a", "b"]);
+    expect(stats.entries).toHaveLength(stats.totalRequests);
+  });
+
+  it("carries only the manager's team", () => {
+    const stats = aggregateStatsForTeam(
+      [
+        entry({ id: "mine", employeeCode: "GRP1042" }),
+        entry({ id: "theirs", employeeCode: "GRP9999" }),
+      ],
+      ["GRP1042"]
+    );
+
+    expect(stats.entries.map((e) => e.id)).toEqual(["mine"]);
+  });
+
+  it("re-aggregates a single month back to that month's own totals", () => {
+    const stats = aggregateStats([
+      entry({ id: "a", receivedAt: "2026-08-04T09:00:00.000Z" }),
+      entry({
+        id: "b",
+        receivedAt: "2026-09-02T09:00:00.000Z",
+        numberOfDays: 3,
+      }),
+      entry({
+        id: "c",
+        receivedAt: "2026-09-20T09:00:00.000Z",
+        employeeCode: "E202",
+        employeeName: "Dev Iyer",
+        leaveType: "Sick Leave",
+        numberOfDays: 2,
+      }),
+    ]);
+
+    const september = aggregateStats(entriesInMonth(stats.entries, "2026-09"));
+
+    expect(september.totalRequests).toBe(2);
+    expect(september.outcomes.applied).toBe(2);
+    expect(september.byEmployee).toHaveLength(2);
+    expect(september.byType.map((t) => t.type).sort()).toEqual([
+      "Casual Leave",
+      "Sick Leave",
+    ]);
+    expect(september.byMonth).toHaveLength(1);
+    expect(september.byMonth[0].month).toBe("Sept 2026");
   });
 });
 
