@@ -3,7 +3,9 @@ import {
   aggregateStats,
   aggregateStatsForTeam,
   buildStatsMonths,
+  chartTicks,
   dailyLeaveCounts,
+  narrowDayLabels,
   entriesInMonth,
   fillTeamRoster,
   statsMonthKey,
@@ -1117,6 +1119,117 @@ describe("fillTeamRoster", () => {
 
     expect(filled).toHaveLength(4);
     expect(filled.filter((p) => p.name === "Asha Rao")).toHaveLength(2);
+  });
+});
+
+describe("chartTicks", () => {
+  it("still gives a scale to read when nobody was off", () => {
+    expect(chartTicks(0)).toEqual([0, 1]);
+  });
+
+  it("tops out at one when at most one person was off", () => {
+    expect(chartTicks(1)).toEqual([0, 1]);
+  });
+
+  it("counts up in ones while that fits in four ticks", () => {
+    expect(chartTicks(2)).toEqual([0, 1, 2]);
+    expect(chartTicks(3)).toEqual([0, 1, 2, 3]);
+  });
+
+  it("widens the step rather than crowd in a fifth tick", () => {
+    expect(chartTicks(4)).toEqual([0, 2, 4]);
+    expect(chartTicks(7)).toEqual([0, 3, 6, 9]);
+    expect(chartTicks(12)).toEqual([0, 4, 8, 12]);
+  });
+
+  it("keeps every tick a whole number of people", () => {
+    for (let peak = 0; peak <= 60; peak += 1) {
+      for (const tick of chartTicks(peak)) {
+        expect(Number.isInteger(tick)).toBe(true);
+      }
+    }
+  });
+
+  it("always starts at zero, rises evenly and clears the peak", () => {
+    for (let peak = 0; peak <= 60; peak += 1) {
+      const ticks = chartTicks(peak);
+
+      expect(ticks[0]).toBe(0);
+      expect(ticks.length).toBeGreaterThanOrEqual(2);
+      expect(ticks.length).toBeLessThanOrEqual(4);
+      expect(ticks[ticks.length - 1]).toBeGreaterThanOrEqual(peak);
+      expect(ticks[ticks.length - 1]).toBeGreaterThan(0);
+
+      const step = ticks[1] - ticks[0];
+      for (let i = 1; i < ticks.length; i += 1) {
+        expect(ticks[i] - ticks[i - 1]).toBe(step);
+      }
+    }
+  });
+
+  it("falls back to a readable scale for a peak that makes no sense", () => {
+    expect(chartTicks(-4)).toEqual([0, 1]);
+    expect(chartTicks(Number.NaN)).toEqual([0, 1]);
+    expect(chartTicks(Number.POSITIVE_INFINITY)).toEqual([0, 1]);
+    expect(chartTicks(Number.NEGATIVE_INFINITY)).toEqual([0, 1]);
+  });
+
+  it("lifts a fractional peak to the whole person above it", () => {
+    expect(chartTicks(2.4)).toEqual([0, 1, 2, 3]);
+  });
+});
+
+describe("narrowDayLabels", () => {
+  it("always shows the first and last date of every month length", () => {
+    for (const days of [28, 29, 30, 31]) {
+      const shown = narrowDayLabels(days);
+
+      expect(shown).toHaveLength(days);
+      expect(shown[0]).toBe(true);
+      expect(shown[days - 1]).toBe(true);
+    }
+  });
+
+  it("never leaves two shown dates side by side", () => {
+    for (const days of [28, 29, 30, 31]) {
+      const shown = narrowDayLabels(days);
+
+      for (let i = 1; i < days; i += 1) {
+        expect(shown[i] && shown[i - 1]).toBe(false);
+      }
+    }
+  });
+
+  it("drops roughly half the dates so each one has room", () => {
+    for (const days of [28, 29, 30, 31]) {
+      const kept = narrowDayLabels(days).filter(Boolean).length;
+
+      expect(kept).toBeLessThanOrEqual(Math.ceil(days / 2) + 1);
+      expect(kept).toBeGreaterThanOrEqual(Math.floor(days / 2));
+    }
+  });
+
+  it("skips the date next to the last one so they cannot collide", () => {
+    expect(narrowDayLabels(30)[28]).toBe(false);
+    expect(narrowDayLabels(30)[29]).toBe(true);
+  });
+
+  it("copes with a month too short to thin out", () => {
+    expect(narrowDayLabels(1)).toEqual([true]);
+    expect(narrowDayLabels(2)).toEqual([true, true]);
+    expect(narrowDayLabels(3)).toEqual([true, false, true]);
+  });
+
+  it("has nothing to show for an empty or nonsense month", () => {
+    expect(narrowDayLabels(0)).toEqual([]);
+    expect(narrowDayLabels(-5)).toEqual([]);
+    expect(narrowDayLabels(Number.NaN)).toEqual([]);
+  });
+
+  it("gives one answer per plotted day", () => {
+    const points = dailyLeaveCounts([], "2026-09");
+
+    expect(narrowDayLabels(points.length)).toHaveLength(points.length);
   });
 });
 
