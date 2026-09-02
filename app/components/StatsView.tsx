@@ -158,27 +158,30 @@ function Overview({
 }
 
 function OutcomeChips({ person }: { person: StatsEmployee }) {
-  const shown = OUTCOMES.filter((o) => person.outcomes[o.key] > 0);
+  const shown = OUTCOMES.filter((o) => person.daysByOutcome[o.key] > 0);
   if (shown.length === 0) return null;
 
   return (
     <span className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-      {shown.map((o) => (
-        <span
-          key={o.key}
-          title={`${person.outcomes[o.key]} ${o.label}`}
-          className={`flex items-center gap-1.5 text-[11px] ${o.tone}`}
-        >
+      {shown.map((o) => {
+        const days = person.daysByOutcome[o.key];
+        return (
           <span
-            aria-hidden="true"
-            className={`lamp-dot h-[5px] w-[5px] shrink-0 ${o.lamp}`}
-          />
-          <span className="font-mono tabular-nums">
-            {person.outcomes[o.key]}
+            key={o.key}
+            title={`${formatNumber(days)} ${
+              days === 1 ? "day" : "days"
+            } ${o.label}`}
+            className={`flex items-center gap-1.5 text-[11px] ${o.tone}`}
+          >
+            <span
+              aria-hidden="true"
+              className={`lamp-dot h-[5px] w-[5px] shrink-0 ${o.lamp}`}
+            />
+            <span className="font-mono tabular-nums">{formatNumber(days)}</span>
+            <span className="sr-only sm:not-sr-only">{o.label}</span>
           </span>
-          <span className="sr-only sm:not-sr-only">{o.label}</span>
-        </span>
-      ))}
+        );
+      })}
     </span>
   );
 }

@@ -25,14 +25,14 @@ export interface StatsMonth {
   byType: Record<string, number>;
 }
 
-export interface StatsEmployeeOutcomes {
+export type StatsEmployeeDays = {
   approved: number;
   rejected: number;
   handled: number;
   pending: number;
-}
+};
 
-export type StatsOutcome = keyof StatsEmployeeOutcomes;
+export type StatsOutcome = keyof StatsEmployeeDays;
 
 export interface StatsEmployeeEntry {
   receivedAt: string;
@@ -47,7 +47,7 @@ export interface StatsEmployee {
   requests: number;
   days: number;
   daysByType: Record<string, number>;
-  outcomes: StatsEmployeeOutcomes;
+  daysByOutcome: StatsEmployeeDays;
   entries: StatsEmployeeEntry[];
 }
 
@@ -346,9 +346,11 @@ function bump(bucket: Record<string, number>, key: string, by: number) {
   bucket[key] = (bucket[key] ?? 0) + by;
 }
 
-function roundEach(bucket: Record<string, number>): Record<string, number> {
-  const rounded: Record<string, number> = {};
-  for (const [key, value] of Object.entries(bucket)) rounded[key] = round(value);
+function roundEach<T extends Record<string, number>>(bucket: T): T {
+  const rounded = {} as T;
+  for (const [key, value] of Object.entries(bucket)) {
+    rounded[key as keyof T] = round(value) as T[keyof T];
+  }
   return rounded;
 }
 
@@ -428,7 +430,7 @@ export function fillTeamRoster(
       requests: 0,
       days: 0,
       daysByType: {},
-      outcomes: { approved: 0, rejected: 0, handled: 0, pending: 0 },
+      daysByOutcome: { approved: 0, rejected: 0, handled: 0, pending: 0 },
       entries: [],
     });
   }
@@ -499,7 +501,7 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
           requests: 0,
           days: 0,
           daysByType: {},
-          outcomes: {
+          daysByOutcome: {
             approved: 0,
             rejected: 0,
             handled: 0,
@@ -509,7 +511,7 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
         };
         employees.set(employeeKey, person);
       }
-      person.outcomes[outcome] += 1;
+      person.daysByOutcome[outcome] += days;
       person.requests += 1;
       person.days += days;
       bump(person.daysByType, type, days);
@@ -539,6 +541,7 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
       ...person,
       days: round(person.days),
       daysByType: roundEach(person.daysByType),
+      daysByOutcome: roundEach(person.daysByOutcome),
       entries: person.entries.sort(
         (a, b) => receivedTime(b.receivedAt) - receivedTime(a.receivedAt)
       ),
