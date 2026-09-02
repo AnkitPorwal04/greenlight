@@ -162,6 +162,36 @@ describe("smoothLinePath", () => {
     }
   });
 
+  it("meets every day at the same angle from both sides", () => {
+    const segments = curveSegments(plot([0, 1, 3, 2, 4, 4, 1], 4));
+
+    for (let i = 1; i < segments.length; i += 1) {
+      const before = segments[i - 1];
+      const after = segments[i];
+      const incoming = (before.to.y - before.c2.y) / (before.to.x - before.c2.x);
+      const outgoing = (after.c1.y - after.from.y) / (after.c1.x - after.from.x);
+
+      expect(outgoing).toBeCloseTo(incoming, 9);
+    }
+
+    expect(
+      segments.some((segment) => Math.abs(segment.c1.y - segment.from.y) > 1e-6)
+    ).toBe(true);
+    expect(
+      segments.some((segment) => Math.abs(segment.c2.y - segment.to.y) > 1e-6)
+    ).toBe(true);
+  });
+
+  it("bends between days instead of cornering at them", () => {
+    const points = plot([0, 1, 3, 2, 4, 1], 4);
+    const chords = curveSegments(points).map((segment) => {
+      const middle = alongSegment(segment, 0.5);
+      return Math.abs(middle.y - (segment.from.y + segment.to.y) / 2);
+    });
+
+    expect(Math.max(...chords)).toBeGreaterThan(0.5);
+  });
+
   it("draws a flat line through days that all read the same", () => {
     const points = plot([2, 2, 2, 2], 4);
 
