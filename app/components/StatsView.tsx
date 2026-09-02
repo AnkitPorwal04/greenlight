@@ -96,12 +96,6 @@ const OUTCOMES: {
     lamp: "",
     tone: "text-[var(--text-muted)]",
   },
-  {
-    key: "withdrawn",
-    label: "withdrawn",
-    lamp: "lamp-hollow",
-    tone: "text-[var(--text-muted)]",
-  },
 ];
 
 const OUTCOME_BY_KEY = OUTCOMES.reduce(
@@ -113,20 +107,12 @@ const OUTCOME_BY_KEY = OUTCOMES.reduce(
 );
 
 function overviewItems(data: StatsPayload, monthLabel: string) {
-  const items = [
-    { label: "Applied", value: String(data.outcomes.applied), muted: false },
-    { label: "People", value: String(data.byEmployee.length), muted: false },
-    { label: "Leave types", value: String(data.byType.length), muted: false },
+  return [
+    { label: "Applied", value: String(data.outcomes.applied) },
+    { label: "People", value: String(data.byEmployee.length) },
+    { label: "Leave types", value: String(data.byType.length) },
+    { label: "Month", value: monthLabel },
   ];
-  if (data.outcomes.withdrawn > 0) {
-    items.push({
-      label: "Withdrawn",
-      value: String(data.outcomes.withdrawn),
-      muted: true,
-    });
-  }
-  items.push({ label: "Month", value: monthLabel, muted: false });
-  return items;
 }
 
 function Overview({
@@ -147,22 +133,10 @@ function Overview({
             key={item.label}
             className="min-w-0 sm:flex-none sm:border-l sm:border-[var(--border)] sm:px-10"
           >
-            <dd
-              className={`font-mono text-[22px] font-medium leading-none tracking-tight tabular-nums sm:text-[28px] ${
-                item.muted
-                  ? "text-[var(--text-muted)]"
-                  : "text-[var(--text-primary)]"
-              }`}
-            >
+            <dd className="font-mono text-[22px] font-medium leading-none tracking-tight tabular-nums text-[var(--text-primary)] sm:text-[28px]">
               {item.value}
             </dd>
             <dt className="mt-2 flex items-center gap-1.5 whitespace-nowrap text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">
-              {item.muted && (
-                <span
-                  aria-hidden="true"
-                  className="lamp-dot lamp-hollow h-[5px] w-[5px] shrink-0"
-                />
-              )}
               {item.label}
             </dt>
           </div>
@@ -443,11 +417,7 @@ function MemberLookup({ data }: { data: StatsPayload }) {
     [selected, activeMonth]
   );
 
-  // Withdrawn leaves were never actually taken — keep them out of the headline
-  // count and days, matching how the rest of Stats treats them.
-  const taken = monthEntries.filter((e) => e.status !== "withdrawn");
-  const takenDays = taken.reduce((sum, e) => sum + e.numberOfDays, 0);
-  const withdrawnCount = monthEntries.length - taken.length;
+  const takenDays = monthEntries.reduce((sum, e) => sum + e.numberOfDays, 0);
 
   if (data.byEmployee.length === 0) return null;
 
@@ -578,20 +548,15 @@ function MemberLookup({ data }: { data: StatsPayload }) {
 
               <div className="mt-5 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-[var(--border)] pt-4">
                 <span className="font-mono text-[24px] font-medium leading-none tracking-tight tabular-nums text-[var(--text-primary)]">
-                  {taken.length}
+                  {monthEntries.length}
                 </span>
                 <span className="text-[12px] text-[var(--text-secondary)]">
-                  {taken.length === 1 ? "leave" : "leaves"} taken
+                  {monthEntries.length === 1 ? "leave" : "leaves"} taken
                 </span>
                 <span className="text-[var(--text-muted)]">·</span>
                 <span className="font-mono text-[13px] tabular-nums text-[var(--text-secondary)]">
                   {formatNumber(takenDays)} days
                 </span>
-                {withdrawnCount > 0 && (
-                  <span className="ml-auto text-[11px] text-[var(--text-muted)]">
-                    {withdrawnCount} withdrawn
-                  </span>
-                )}
               </div>
 
               <ul className="mt-2 divide-y divide-[var(--border)]">
