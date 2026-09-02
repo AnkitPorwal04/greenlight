@@ -151,13 +151,25 @@ describe("a person's days per leave type", () => {
   });
 
   it("never shows floating point dust for a type", () => {
-    const person = aggregateStats(
-      [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1].map((numberOfDays, i) =>
-        entry({ id: `d${i}`, leaveType: "Casual Leave", numberOfDays })
-      )
-    ).byEmployee[0];
+    const person = aggregateStats([
+      entry({ id: "a", leaveType: "Casual Leave", numberOfDays: 0.1 }),
+      entry({ id: "b", leaveType: "Casual Leave", numberOfDays: 0.1 }),
+      entry({ id: "c", leaveType: "Casual Leave", numberOfDays: 0.1 }),
+    ]).byEmployee[0];
 
-    expect(person.daysByType["Casual Leave"]).toBe(0.7);
+    expect(0.1 + 0.1 + 0.1).not.toBe(0.3);
+    expect(person.daysByType["Casual Leave"]).toBe(0.3);
+    expect(sumOf(person.daysByType)).toBe(person.days);
+  });
+
+  it("rounds a type the same way a prorated day total is rounded", () => {
+    const person = aggregateStats([
+      entry({ id: "a", leaveType: "Earned Leave", numberOfDays: 1.1 }),
+      entry({ id: "b", leaveType: "Earned Leave", numberOfDays: 2.2 }),
+    ]).byEmployee[0];
+
+    expect(1.1 + 2.2).not.toBe(3.3);
+    expect(person.daysByType["Earned Leave"]).toBe(3.3);
     expect(sumOf(person.daysByType)).toBe(person.days);
   });
 
