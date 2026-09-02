@@ -10,8 +10,13 @@ import {
   statsMonthLabel,
   statsMonthShortLabel,
   teamRoster,
+  topDaysByType,
   type StatsEntry,
 } from "./stats";
+
+function sumOf(bucket: Record<string, number>): number {
+  return Object.values(bucket).reduce((total, value) => total + value, 0);
+}
 
 function entry(over: Partial<StatsEntry> = {}): StatsEntry {
   return {
@@ -76,6 +81,187 @@ describe("aggregateStats employee entries", () => {
   });
 });
 
+describe("a person's days per leave type", () => {
+  it("counts days, not requests, so it agrees with the row's day total", () => {
+    const person = aggregateStats([
+      entry({ id: "a", leaveType: "Casual Leave", numberOfDays: 2 }),
+      entry({ id: "b", leaveType: "Casual Leave", numberOfDays: 1 }),
+      entry({ id: "c", leaveType: "Restricted Holiday", numberOfDays: 1 }),
+    ]).byEmployee[0];
+
+    expect(person.daysByType).toEqual({
+      "Casual Leave": 3,
+      "Restricted Holiday": 1,
+    });
+    expect(person.requests).toBe(3);
+    expect(person.days).toBe(4);
+    expect(sumOf(person.daysByType)).toBe(person.days);
+  });
+
+  it("always adds up to the person's day total", () => {
+    const person = aggregateStats([
+      entry({ id: "a", leaveType: "Casual Leave", numberOfDays: 2 }),
+      entry({ id: "b", leaveType: "Sick Leave", numberOfDays: 0.5 }),
+      entry({ id: "c", leaveType: "Earned Leave", numberOfDays: 3.5 }),
+      entry({ id: "d", leaveType: "Casual Leave", numberOfDays: -2 }),
+      entry({ id: "e", leaveType: "  ", numberOfDays: 1 }),
+    ]).byEmployee[0];
+
+    expect(sumOf(person.daysByType)).toBe(person.days);
+    expect(person.daysByType["Casual Leave"]).toBe(2);
+    expect(person.daysByType["Unspecified"]).toBe(1);
+  });
+
+  it("still adds up once a month's days have been prorated", () => {
+    const person = aggregateStats(
+      entriesInMonth(
+        [
+          entry({
+            id: "spanning",
+            leaveType: "Earned Leave",
+            fromDate: "30 Aug 2026",
+            toDate: "02 Sep 2026",
+            numberOfDays: 4,
+            receivedAt: "2026-08-20T09:00:00.000Z",
+          }),
+          entry({
+            id: "third",
+            leaveType: "Casual Leave",
+            fromDate: "10 Sep 2026",
+            toDate: "12 Sep 2026",
+            numberOfDays: 1,
+            receivedAt: "2026-09-09T09:00:00.000Z",
+          }),
+        ],
+        "2026-09"
+      )
+    ).byEmployee[0];
+
+    expect(sumOf(person.daysByType)).toBeCloseTo(person.days, 5);
+  });
+
+  it("keeps half days instead of rounding them to whole days", () => {
+    const person = aggregateStats([
+      entry({ id: "a", leaveType: "Casual Leave", numberOfDays: 0.5 }),
+      entry({ id: "b", leaveType: "Casual Leave", numberOfDays: 2 }),
+    ]).byEmployee[0];
+
+    expect(person.daysByType["Casual Leave"]).toBe(2.5);
+    expect(sumOf(person.daysByType)).toBe(person.days);
+  });
+
+  it("never shows floating point dust for a type", () => {
+    const person = aggregateStats(
+      [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1].map((numberOfDays, i) =>
+        entry({ id: `d${i}`, leaveType: "Casual Leave", numberOfDays })
+      )
+    ).byEmployee[0];
+
+    expect(person.daysByType["Casual Leave"]).toBe(0.7);
+    expect(sumOf(person.daysByType)).toBe(person.days);
+  });
+
+  it("records zero days for a request whose only day a newer one took", () => {
+    const beaten = entry({
+      id: "beaten",
+      leaveType: "Casual Leave",
+      fromDate: "03 Sep 2026",
+      toDate: "03 Sep 2026",
+      numberOfDays: 1,
+      receivedAt: "2026-08-01T09:00:00.000Z",
+    });
+    const winner = entry({
+      id: "winner",
+      leaveType: "Sick Leave",
+      fromDate: "03 Sep 2026",
+      toDate: "03 Sep 2026",
+      numberOfDays: 1,
+      receivedAt: "2026-09-02T09:00:00.000Z",
+    });
+
+    const person = aggregateStats(
+      entriesInMonth([beaten, winner], "2026-09")
+    ).byEmployee[0];
+
+    expect(person.daysByType).toEqual({
+      "Casual Leave": 0,
+      "Sick Leave": 1,
+    });
+    expect(person.requests).toBe(2);
+    expect(person.days).toBe(1);
+    expect(sumOf(person.daysByType)).toBe(person.days);
+    expect(topDaysByType(person.daysByType)).toEqual([
+      { type: "Sick Leave", days: 1 },
+    ]);
+  });
+
+  it("leaves a roster member who took nothing with no types to show", () => {
+    const filled = fillTeamRoster([], [{ code: "GRP2001", name: "Vikram" }]);
+
+    expect(filled[0].daysByType).toEqual({});
+    expect(topDaysByType(filled[0].daysByType)).toEqual([]);
+  });
+});
+
+describe("topDaysByType", () => {
+  it("hides a type that contributed no days", () => {
+    expect(
+      topDaysByType({ "Casual Leave": 0, "Sick Leave": 2 })
+    ).toEqual([{ type: "Sick Leave", days: 2 }]);
+  });
+
+  it("has nothing to show when every type is zero", () => {
+    expect(topDaysByType({ "Casual Leave": 0, "Sick Leave": 0 })).toEqual([]);
+    expect(topDaysByType({})).toEqual([]);
+  });
+
+  it("puts the biggest type first", () => {
+    expect(
+      topDaysByType({ "Casual Leave": 1, "Sick Leave": 4, "Earned Leave": 2 })
+    ).toEqual([
+      { type: "Sick Leave", days: 4 },
+      { type: "Earned Leave", days: 2 },
+      { type: "Casual Leave", days: 1 },
+    ]);
+  });
+
+  it("settles a tie by name so the order never wobbles", () => {
+    const tied = { Sick: 2, Casual: 2, Earned: 2 };
+
+    expect(topDaysByType(tied).map((row) => row.type)).toEqual([
+      "Casual",
+      "Earned",
+      "Sick",
+    ]);
+    expect(topDaysByType({ Earned: 2, Sick: 2, Casual: 2 })).toEqual(
+      topDaysByType(tied)
+    );
+  });
+
+  it("shows at most four types", () => {
+    const many = { a: 6, b: 5, c: 4, d: 3, e: 2, f: 1 };
+
+    expect(topDaysByType(many).map((row) => row.type)).toEqual([
+      "a",
+      "b",
+      "c",
+      "d",
+    ]);
+    expect(topDaysByType(many, 2).map((row) => row.type)).toEqual(["a", "b"]);
+  });
+
+  it("ignores days that are negative or not a number", () => {
+    expect(
+      topDaysByType({
+        Good: 1,
+        Negative: -3,
+        Broken: Number.NaN,
+        Endless: Number.POSITIVE_INFINITY,
+      })
+    ).toEqual([{ type: "Good", days: 1 }]);
+  });
+});
+
 describe("withdrawn requests", () => {
   const kept = entry({
     id: "kept",
@@ -114,7 +300,7 @@ describe("withdrawn requests", () => {
 
     expect(person.requests).toBe(1);
     expect(person.days).toBe(2);
-    expect(person.byType).toEqual({ "Casual Leave": 1 });
+    expect(person.daysByType).toEqual({ "Casual Leave": 2 });
     expect(person.outcomes).toEqual({
       approved: 1,
       rejected: 0,
@@ -836,7 +1022,7 @@ describe("fillTeamRoster", () => {
       name: "Vikram Singh",
       requests: 0,
       days: 0,
-      byType: {},
+      daysByType: {},
       outcomes: { approved: 0, rejected: 0, handled: 0, pending: 0 },
       entries: [],
     });
@@ -875,7 +1061,7 @@ describe("fillTeamRoster", () => {
       name: "Asha Rao",
       requests: 1,
       days: 1,
-      byType: {},
+      daysByType: {},
       outcomes: { approved: 1, rejected: 0, handled: 0, pending: 0 },
       entries: [],
     };

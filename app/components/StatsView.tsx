@@ -10,6 +10,7 @@ import {
   statsMonthKey,
   statsMonthLabel,
   statsMonthShortLabel,
+  topDaysByType,
   type DailyLeavePoint,
   type StatsEmployee,
   type StatsEmployeeEntry,
@@ -68,11 +69,9 @@ function memberKey(person: { code: string; name: string }) {
   return `${person.code}-${person.name}`;
 }
 
-function breakdown(byType: Record<string, number>) {
-  return Object.entries(byType)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 4)
-    .map(([type, count]) => `${count} ${leaveTypeShort(type)}`)
+function breakdown(daysByType: Record<string, number>) {
+  return topDaysByType(daysByType)
+    .map((row) => `${formatNumber(row.days)} ${leaveTypeShort(row.type)}`)
     .join(" · ");
 }
 
@@ -347,7 +346,7 @@ function TopTakers({ data }: { data: StatsPayload }) {
                     />
                   </span>
                   <span className="mt-2 block font-mono text-[11px] text-[var(--text-muted)]">
-                    {breakdown(person.byType) ||
+                    {breakdown(person.daysByType) ||
                       `${person.requests} ${
                         person.requests === 1 ? "request" : "requests"
                       }`}
