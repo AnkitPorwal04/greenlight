@@ -19,6 +19,7 @@ import {
   type StatsOutcome,
   type StatsPayload,
 } from "@/lib/stats";
+import { smoothAreaPath, smoothLinePath } from "@/lib/chart";
 import { formatLeaveDate } from "@/lib/leave-dates";
 import { ArtTray, EmptyState } from "./States";
 import {
@@ -37,7 +38,7 @@ const CHART_WIDTH = 300;
 const CHART_HEIGHT = 88;
 const CHART_TOP = 6;
 const CHART_BASELINE = 82;
-const PLOT_HEIGHT = "h-24 sm:h-32";
+const PLOT_HEIGHT = "h-28 sm:h-36";
 
 function Label({ children }: { children: React.ReactNode }) {
   return (
@@ -158,27 +159,30 @@ function Overview({
 }
 
 function OutcomeChips({ person }: { person: StatsEmployee }) {
-  const shown = OUTCOMES.filter((o) => person.outcomes[o.key] > 0);
+  const shown = OUTCOMES.filter((o) => person.daysByOutcome[o.key] > 0);
   if (shown.length === 0) return null;
 
   return (
     <span className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-      {shown.map((o) => (
-        <span
-          key={o.key}
-          title={`${person.outcomes[o.key]} ${o.label}`}
-          className={`flex items-center gap-1.5 text-[11px] ${o.tone}`}
-        >
+      {shown.map((o) => {
+        const days = person.daysByOutcome[o.key];
+        return (
           <span
-            aria-hidden="true"
-            className={`lamp-dot h-[5px] w-[5px] shrink-0 ${o.lamp}`}
-          />
-          <span className="font-mono tabular-nums">
-            {person.outcomes[o.key]}
+            key={o.key}
+            title={`${formatNumber(days)} ${
+              days === 1 ? "day" : "days"
+            } ${o.label}`}
+            className={`flex items-center gap-1.5 text-[11px] ${o.tone}`}
+          >
+            <span
+              aria-hidden="true"
+              className={`lamp-dot h-[5px] w-[5px] shrink-0 ${o.lamp}`}
+            />
+            <span className="font-mono tabular-nums">{formatNumber(days)}</span>
+            <span className="sr-only sm:not-sr-only">{o.label}</span>
           </span>
-          <span className="sr-only sm:not-sr-only">{o.label}</span>
-        </span>
-      ))}
+        );
+      })}
     </span>
   );
 }
@@ -673,6 +677,7 @@ function DailyPattern({
   monthLabel: string;
 }) {
   const titleId = useId();
+  const fillId = useId();
   if (points.length === 0) return null;
 
   const busiestIndex = points.reduce(
@@ -691,20 +696,13 @@ function DailyPattern({
   const atPeople = (people: number) =>
     CHART_BASELINE - (people / ceiling) * (CHART_BASELINE - CHART_TOP);
   const downFromTop = (y: number) => `${((y / CHART_HEIGHT) * 100).toFixed(3)}%`;
-  const acrossTo = (index: number) =>
-    `${(((index + 0.5) / points.length) * 100).toFixed(3)}%`;
 
-  const line = points
-    .map(
-      (point, i) =>
-        `${i === 0 ? "M" : "L"}${atDay(i).toFixed(2)} ${atPeople(
-          point.people
-        ).toFixed(2)}`
-    )
-    .join(" ");
-  const under = `${line} L${atDay(points.length - 1).toFixed(
-    2
-  )} ${CHART_BASELINE} L${atDay(0).toFixed(2)} ${CHART_BASELINE} Z`;
+  const plotted = points.map((point, i) => ({
+    x: atDay(i),
+    y: atPeople(point.people),
+  }));
+  const line = smoothLinePath(plotted);
+  const under = smoothAreaPath(plotted, CHART_BASELINE);
 
   const summary =
     peak > 0
@@ -739,7 +737,7 @@ function DailyPattern({
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className={`relative ${PLOT_HEIGHT}`}>
+          <div className={PLOT_HEIGHT}>
             <svg
               role="img"
               aria-label={summary}
@@ -748,6 +746,32 @@ function DailyPattern({
               className="block h-full w-full"
             >
               <title id={titleId}>{summary}</title>
+              <defs>
+                <linearGradient
+                  id={fillId}
+                  gradientUnits="userSpaceOnUse"
+                  x1="0"
+                  y1={CHART_TOP}
+                  x2="0"
+                  y2={CHART_BASELINE}
+                >
+                  <stop
+                    offset="0%"
+                    stopColor="var(--accent-soft)"
+                    stopOpacity="1"
+                  />
+                  <stop
+                    offset="60%"
+                    stopColor="var(--accent-soft)"
+                    stopOpacity="0.45"
+                  />
+                  <stop
+                    offset="100%"
+                    stopColor="var(--accent-soft)"
+                    stopOpacity="0"
+                  />
+                </linearGradient>
+              </defs>
               {ticks.map((tick) => (
                 <line
                   key={tick}
@@ -755,14 +779,14 @@ function DailyPattern({
                   y1={atPeople(tick).toFixed(2)}
                   x2={CHART_WIDTH}
                   y2={atPeople(tick).toFixed(2)}
-                  stroke={
-                    tick === 0 ? "var(--border-strong)" : "var(--border)"
-                  }
+                  stroke={tick === 0 ? "var(--border-strong)" : "var(--border)"}
                   strokeWidth="1"
+                  strokeOpacity={tick === 0 ? 0.7 : 0.4}
+                  strokeDasharray={tick === 0 ? undefined : "2 5"}
                   vectorEffect="non-scaling-stroke"
                 />
               ))}
-              <path d={under} fill="var(--accent-soft)" />
+              <path d={under} fill={`url(#${fillId})`} />
               <path
                 d={line}
                 fill="none"
@@ -773,16 +797,6 @@ function DailyPattern({
                 vectorEffect="non-scaling-stroke"
               />
             </svg>
-            {peak > 0 && (
-              <span
-                aria-hidden="true"
-                className="absolute h-[5px] w-[5px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--accent)]"
-                style={{
-                  left: acrossTo(busiestIndex),
-                  top: downFromTop(atPeople(peak)),
-                }}
-              />
-            )}
           </div>
 
           <div

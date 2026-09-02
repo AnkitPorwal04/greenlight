@@ -217,6 +217,230 @@ describe("a person's days per leave type", () => {
   });
 });
 
+describe("a person's days per outcome", () => {
+  const chipsOf = (bucket: Record<string, number>) =>
+    Object.entries(bucket).filter(([, days]) => days > 0);
+
+  it("counts days, not requests, on the chips under a name", () => {
+    const person = aggregateStats([
+      entry({
+        id: "cl-handled",
+        leaveType: "Casual Leave",
+        numberOfDays: 1.5,
+        status: "handled",
+      }),
+      entry({
+        id: "cl-approved",
+        leaveType: "Casual Leave",
+        numberOfDays: 1.5,
+        status: "approved",
+      }),
+      entry({
+        id: "rh-approved",
+        leaveType: "Restricted Holiday",
+        numberOfDays: 1,
+        status: "approved",
+      }),
+    ]).byEmployee[0];
+
+    expect(person.daysByOutcome).toEqual({
+      approved: 2.5,
+      rejected: 0,
+      handled: 1.5,
+      pending: 0,
+    });
+    expect(person.daysByOutcome).not.toEqual({
+      approved: 2,
+      rejected: 0,
+      handled: 1,
+      pending: 0,
+    });
+    expect(person.requests).toBe(3);
+    expect(person.days).toBe(4);
+    expect(person.daysByType).toEqual({
+      "Casual Leave": 3,
+      "Restricted Holiday": 1,
+    });
+    expect(sumOf(person.daysByOutcome)).toBe(person.days);
+  });
+
+  it("keeps half days instead of rounding them to whole days", () => {
+    const { byEmployee } = aggregateStats([
+      entry({ id: "a", numberOfDays: 0.5, status: "approved" }),
+      entry({ id: "b", numberOfDays: 2, status: "approved" }),
+      entry({
+        id: "c",
+        employeeCode: "E202",
+        employeeName: "Dev Iyer",
+        numberOfDays: 0.1,
+        status: "approved",
+      }),
+      entry({
+        id: "d",
+        employeeCode: "E202",
+        employeeName: "Dev Iyer",
+        numberOfDays: 2.2,
+        status: "approved",
+      }),
+      entry({
+        id: "e",
+        employeeCode: "E202",
+        employeeName: "Dev Iyer",
+        numberOfDays: 0.2,
+        status: "approved",
+      }),
+    ]);
+
+    const asha = byEmployee.find((p) => p.code === "E101")!;
+    expect(asha.daysByOutcome.approved).toBe(2.5);
+    expect(asha.daysByOutcome.approved).not.toBe(2);
+    expect(asha.daysByOutcome.approved).not.toBe(3);
+    expect(sumOf(asha.daysByOutcome)).toBe(asha.days);
+
+    const dev = byEmployee.find((p) => p.code === "E202")!;
+    expect(0.1 + 2.2 + 0.2).not.toBe(2.5);
+    expect(dev.daysByOutcome.approved).toBe(2.5);
+    expect(sumOf(dev.daysByOutcome)).toBe(dev.days);
+  });
+
+  it("never shows floating point dust for an outcome", () => {
+    const person = aggregateStats([
+      entry({ id: "a", numberOfDays: 0.1, status: "rejected" }),
+      entry({ id: "b", numberOfDays: 0.1, status: "rejected" }),
+      entry({ id: "c", numberOfDays: 0.1, status: "rejected" }),
+    ]).byEmployee[0];
+
+    expect(0.1 + 0.1 + 0.1).not.toBe(0.3);
+    expect(person.daysByOutcome.rejected).toBe(0.3);
+    expect(sumOf(person.daysByOutcome)).toBe(person.days);
+  });
+
+  it("always adds up to the person's day total across every outcome", () => {
+    const person = aggregateStats([
+      entry({ id: "a", numberOfDays: 2, status: "approved" }),
+      entry({ id: "b", numberOfDays: 0.5, status: "rejected" }),
+      entry({ id: "c", numberOfDays: 3.5, status: "handled" }),
+      entry({ id: "d", numberOfDays: 1, status: undefined }),
+      entry({ id: "e", numberOfDays: -2, status: "approved" }),
+    ]).byEmployee[0];
+
+    expect(person.daysByOutcome).toEqual({
+      approved: 2,
+      rejected: 0.5,
+      handled: 3.5,
+      pending: 1,
+    });
+    expect(sumOf(person.daysByOutcome)).toBe(person.days);
+    expect(person.requests).toBe(5);
+  });
+
+  it("still adds up once a month's days have been prorated", () => {
+    const person = aggregateStats(
+      entriesInMonth(
+        [
+          entry({
+            id: "spanning",
+            leaveType: "Earned Leave",
+            fromDate: "29 Aug 2026",
+            toDate: "02 Sep 2026",
+            numberOfDays: 4,
+            receivedAt: "2026-08-20T09:00:00.000Z",
+            status: "approved",
+          }),
+          entry({
+            id: "third",
+            leaveType: "Casual Leave",
+            fromDate: "10 Sep 2026",
+            toDate: "12 Sep 2026",
+            numberOfDays: 1,
+            receivedAt: "2026-09-09T09:00:00.000Z",
+            status: "handled",
+          }),
+        ],
+        "2026-09"
+      )
+    ).byEmployee[0];
+
+    expect(person.daysByOutcome.approved).toBeCloseTo(1.6, 5);
+    expect(person.daysByOutcome.handled).toBeCloseTo(1, 5);
+    expect(sumOf(person.daysByOutcome)).toBeCloseTo(person.days, 5);
+  });
+
+  it("leaves no chip for a request whose only day a newer one took", () => {
+    const beaten = entry({
+      id: "beaten",
+      leaveType: "Casual Leave",
+      fromDate: "03 Sep 2026",
+      toDate: "03 Sep 2026",
+      numberOfDays: 1,
+      receivedAt: "2026-08-01T09:00:00.000Z",
+      status: "handled",
+    });
+    const winner = entry({
+      id: "winner",
+      leaveType: "Sick Leave",
+      fromDate: "03 Sep 2026",
+      toDate: "03 Sep 2026",
+      numberOfDays: 1,
+      receivedAt: "2026-09-02T09:00:00.000Z",
+      status: "approved",
+    });
+
+    const person = aggregateStats(
+      entriesInMonth([beaten, winner], "2026-09")
+    ).byEmployee[0];
+
+    expect(person.requests).toBe(2);
+    expect(person.days).toBe(1);
+    expect(person.daysByOutcome).toEqual({
+      approved: 1,
+      rejected: 0,
+      handled: 0,
+      pending: 0,
+    });
+    expect(chipsOf(person.daysByOutcome)).toEqual([["approved", 1]]);
+    expect(sumOf(person.daysByOutcome)).toBe(person.days);
+  });
+
+  it("shows a part day rather than dropping it as nothing", () => {
+    const person = aggregateStats([
+      entry({ id: "a", numberOfDays: 0.4, status: "pending" }),
+    ]).byEmployee[0];
+
+    expect(person.daysByOutcome.pending).toBe(0.4);
+    expect(chipsOf(person.daysByOutcome)).toEqual([["pending", 0.4]]);
+  });
+
+  it("never turns a nonsense day count into a chip", () => {
+    const person = aggregateStats([
+      entry({ id: "a", numberOfDays: -3, status: "approved" }),
+      entry({ id: "b", numberOfDays: Number.NaN, status: "rejected" }),
+      entry({ id: "c", numberOfDays: 2, status: "handled" }),
+    ]).byEmployee[0];
+
+    expect(person.daysByOutcome).toEqual({
+      approved: 0,
+      rejected: 0,
+      handled: 2,
+      pending: 0,
+    });
+    expect(chipsOf(person.daysByOutcome)).toEqual([["handled", 2]]);
+    expect(person.requests).toBe(3);
+  });
+
+  it("leaves a roster member who took nothing with no chips to show", () => {
+    const filled = fillTeamRoster([], [{ code: "GRP2001", name: "Vikram" }]);
+
+    expect(filled[0].daysByOutcome).toEqual({
+      approved: 0,
+      rejected: 0,
+      handled: 0,
+      pending: 0,
+    });
+    expect(chipsOf(filled[0].daysByOutcome)).toEqual([]);
+  });
+});
+
 describe("topDaysByType", () => {
   it("hides a type that contributed no days", () => {
     expect(
@@ -315,8 +539,8 @@ describe("withdrawn requests", () => {
     expect(person.requests).toBe(1);
     expect(person.days).toBe(2);
     expect(person.daysByType).toEqual({ "Casual Leave": 2 });
-    expect(person.outcomes).toEqual({
-      approved: 1,
+    expect(person.daysByOutcome).toEqual({
+      approved: 2,
       rejected: 0,
       handled: 0,
       pending: 0,
@@ -1037,7 +1261,7 @@ describe("fillTeamRoster", () => {
       requests: 0,
       days: 0,
       daysByType: {},
-      outcomes: { approved: 0, rejected: 0, handled: 0, pending: 0 },
+      daysByOutcome: { approved: 0, rejected: 0, handled: 0, pending: 0 },
       entries: [],
     });
   });
@@ -1076,7 +1300,7 @@ describe("fillTeamRoster", () => {
       requests: 1,
       days: 1,
       daysByType: {},
-      outcomes: { approved: 1, rejected: 0, handled: 0, pending: 0 },
+      daysByOutcome: { approved: 1, rejected: 0, handled: 0, pending: 0 },
       entries: [],
     };
     const busy = { ...quiet, code: "GRP2001", name: "Vikram Singh", days: 4 };
