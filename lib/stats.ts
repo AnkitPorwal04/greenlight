@@ -46,7 +46,7 @@ export interface StatsEmployee {
   name: string;
   requests: number;
   days: number;
-  byType: Record<string, number>;
+  daysByType: Record<string, number>;
   outcomes: StatsEmployeeOutcomes;
   entries: StatsEmployeeEntry[];
 }
@@ -282,6 +282,33 @@ export function dailyLeaveCounts(
   }));
 }
 
+const MAX_CHART_TICKS = 4;
+
+export function chartTicks(peak: number): number[] {
+  const highest = Number.isFinite(peak) ? Math.max(0, Math.ceil(peak)) : 0;
+  if (highest === 0) return [0, 1];
+
+  const spans = MAX_CHART_TICKS - 1;
+  let step = 1;
+  while (Math.ceil(highest / step) > spans) step += 1;
+
+  const ceiling = step * Math.ceil(highest / step);
+  const ticks: number[] = [];
+  for (let value = 0; value <= ceiling; value += step) ticks.push(value);
+  return ticks;
+}
+
+export function narrowDayLabels(count: number): boolean[] {
+  if (!Number.isFinite(count) || count <= 0) return [];
+
+  const last = Math.floor(count) - 1;
+  return Array.from({ length: Math.floor(count) }, (_, index) => {
+    if (index === 0 || index === last) return true;
+    if (index === last - 1) return false;
+    return index % 2 === 0;
+  });
+}
+
 export function entriesInMonth(
   entries: StatsEntry[],
   key: string
@@ -319,6 +346,12 @@ function bump(bucket: Record<string, number>, key: string, by: number) {
   bucket[key] = (bucket[key] ?? 0) + by;
 }
 
+function roundEach(bucket: Record<string, number>): Record<string, number> {
+  const rounded: Record<string, number> = {};
+  for (const [key, value] of Object.entries(bucket)) rounded[key] = round(value);
+  return rounded;
+}
+
 function receivedTime(value: string): number {
   const ts = new Date(value).getTime();
   return Number.isNaN(ts) ? 0 : ts;
@@ -336,6 +369,24 @@ function byDaysThenRequests(a: StatsEmployee, b: StatsEmployee): number {
 
 function groupingKey(code: string, name: string): string {
   return code.trim().toUpperCase() || name.trim().toLowerCase();
+}
+
+export interface StatsTypeDays {
+  type: string;
+  days: number;
+}
+
+const BREAKDOWN_TYPES = 4;
+
+export function topDaysByType(
+  daysByType: Record<string, number>,
+  limit: number = BREAKDOWN_TYPES
+): StatsTypeDays[] {
+  return Object.entries(daysByType ?? {})
+    .filter(([, days]) => Number.isFinite(days) && days > 0)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, Math.max(0, limit))
+    .map(([type, days]) => ({ type, days }));
 }
 
 export function teamRoster(
@@ -376,7 +427,7 @@ export function fillTeamRoster(
       name: member.name.trim() || code || "Unknown",
       requests: 0,
       days: 0,
-      byType: {},
+      daysByType: {},
       outcomes: { approved: 0, rejected: 0, handled: 0, pending: 0 },
       entries: [],
     });
@@ -447,7 +498,7 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
           name: entry.employeeName.trim() || "Unknown",
           requests: 0,
           days: 0,
-          byType: {},
+          daysByType: {},
           outcomes: {
             approved: 0,
             rejected: 0,
@@ -461,7 +512,7 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
       person.outcomes[outcome] += 1;
       person.requests += 1;
       person.days += days;
-      bump(person.byType, type, 1);
+      bump(person.daysByType, type, days);
       person.entries.push({
         receivedAt: entry.receivedAt,
         leaveType: type,
@@ -487,6 +538,7 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
     .map((person) => ({
       ...person,
       days: round(person.days),
+      daysByType: roundEach(person.daysByType),
       entries: person.entries.sort(
         (a, b) => receivedTime(b.receivedAt) - receivedTime(a.receivedAt)
       ),

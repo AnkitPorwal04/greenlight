@@ -3,15 +3,22 @@ import {
   aggregateStats,
   aggregateStatsForTeam,
   buildStatsMonths,
+  chartTicks,
   dailyLeaveCounts,
+  narrowDayLabels,
   entriesInMonth,
   fillTeamRoster,
   statsMonthKey,
   statsMonthLabel,
   statsMonthShortLabel,
   teamRoster,
+  topDaysByType,
   type StatsEntry,
 } from "./stats";
+
+function sumOf(bucket: Record<string, number>): number {
+  return Object.values(bucket).reduce((total, value) => total + value, 0);
+}
 
 function entry(over: Partial<StatsEntry> = {}): StatsEntry {
   return {
@@ -76,6 +83,199 @@ describe("aggregateStats employee entries", () => {
   });
 });
 
+describe("a person's days per leave type", () => {
+  it("counts days, not requests, so it agrees with the row's day total", () => {
+    const person = aggregateStats([
+      entry({ id: "a", leaveType: "Casual Leave", numberOfDays: 2 }),
+      entry({ id: "b", leaveType: "Casual Leave", numberOfDays: 1 }),
+      entry({ id: "c", leaveType: "Restricted Holiday", numberOfDays: 1 }),
+    ]).byEmployee[0];
+
+    expect(person.daysByType).toEqual({
+      "Casual Leave": 3,
+      "Restricted Holiday": 1,
+    });
+    expect(person.requests).toBe(3);
+    expect(person.days).toBe(4);
+    expect(sumOf(person.daysByType)).toBe(person.days);
+  });
+
+  it("always adds up to the person's day total", () => {
+    const person = aggregateStats([
+      entry({ id: "a", leaveType: "Casual Leave", numberOfDays: 2 }),
+      entry({ id: "b", leaveType: "Sick Leave", numberOfDays: 0.5 }),
+      entry({ id: "c", leaveType: "Earned Leave", numberOfDays: 3.5 }),
+      entry({ id: "d", leaveType: "Casual Leave", numberOfDays: -2 }),
+      entry({ id: "e", leaveType: "  ", numberOfDays: 1 }),
+    ]).byEmployee[0];
+
+    expect(sumOf(person.daysByType)).toBe(person.days);
+    expect(person.daysByType["Casual Leave"]).toBe(2);
+    expect(person.daysByType["Unspecified"]).toBe(1);
+  });
+
+  it("still adds up once a month's days have been prorated", () => {
+    const person = aggregateStats(
+      entriesInMonth(
+        [
+          entry({
+            id: "spanning",
+            leaveType: "Earned Leave",
+            fromDate: "30 Aug 2026",
+            toDate: "02 Sep 2026",
+            numberOfDays: 4,
+            receivedAt: "2026-08-20T09:00:00.000Z",
+          }),
+          entry({
+            id: "third",
+            leaveType: "Casual Leave",
+            fromDate: "10 Sep 2026",
+            toDate: "12 Sep 2026",
+            numberOfDays: 1,
+            receivedAt: "2026-09-09T09:00:00.000Z",
+          }),
+        ],
+        "2026-09"
+      )
+    ).byEmployee[0];
+
+    expect(sumOf(person.daysByType)).toBeCloseTo(person.days, 5);
+  });
+
+  it("keeps half days instead of rounding them to whole days", () => {
+    const person = aggregateStats([
+      entry({ id: "a", leaveType: "Casual Leave", numberOfDays: 0.5 }),
+      entry({ id: "b", leaveType: "Casual Leave", numberOfDays: 2 }),
+    ]).byEmployee[0];
+
+    expect(person.daysByType["Casual Leave"]).toBe(2.5);
+    expect(sumOf(person.daysByType)).toBe(person.days);
+  });
+
+  it("never shows floating point dust for a type", () => {
+    const person = aggregateStats([
+      entry({ id: "a", leaveType: "Casual Leave", numberOfDays: 0.1 }),
+      entry({ id: "b", leaveType: "Casual Leave", numberOfDays: 0.1 }),
+      entry({ id: "c", leaveType: "Casual Leave", numberOfDays: 0.1 }),
+    ]).byEmployee[0];
+
+    expect(0.1 + 0.1 + 0.1).not.toBe(0.3);
+    expect(person.daysByType["Casual Leave"]).toBe(0.3);
+    expect(sumOf(person.daysByType)).toBe(person.days);
+  });
+
+  it("rounds a type the same way a prorated day total is rounded", () => {
+    const person = aggregateStats([
+      entry({ id: "a", leaveType: "Earned Leave", numberOfDays: 1.1 }),
+      entry({ id: "b", leaveType: "Earned Leave", numberOfDays: 2.2 }),
+    ]).byEmployee[0];
+
+    expect(1.1 + 2.2).not.toBe(3.3);
+    expect(person.daysByType["Earned Leave"]).toBe(3.3);
+    expect(sumOf(person.daysByType)).toBe(person.days);
+  });
+
+  it("records zero days for a request whose only day a newer one took", () => {
+    const beaten = entry({
+      id: "beaten",
+      leaveType: "Casual Leave",
+      fromDate: "03 Sep 2026",
+      toDate: "03 Sep 2026",
+      numberOfDays: 1,
+      receivedAt: "2026-08-01T09:00:00.000Z",
+    });
+    const winner = entry({
+      id: "winner",
+      leaveType: "Sick Leave",
+      fromDate: "03 Sep 2026",
+      toDate: "03 Sep 2026",
+      numberOfDays: 1,
+      receivedAt: "2026-09-02T09:00:00.000Z",
+    });
+
+    const person = aggregateStats(
+      entriesInMonth([beaten, winner], "2026-09")
+    ).byEmployee[0];
+
+    expect(person.daysByType).toEqual({
+      "Casual Leave": 0,
+      "Sick Leave": 1,
+    });
+    expect(person.requests).toBe(2);
+    expect(person.days).toBe(1);
+    expect(sumOf(person.daysByType)).toBe(person.days);
+    expect(topDaysByType(person.daysByType)).toEqual([
+      { type: "Sick Leave", days: 1 },
+    ]);
+  });
+
+  it("leaves a roster member who took nothing with no types to show", () => {
+    const filled = fillTeamRoster([], [{ code: "GRP2001", name: "Vikram" }]);
+
+    expect(filled[0].daysByType).toEqual({});
+    expect(topDaysByType(filled[0].daysByType)).toEqual([]);
+  });
+});
+
+describe("topDaysByType", () => {
+  it("hides a type that contributed no days", () => {
+    expect(
+      topDaysByType({ "Casual Leave": 0, "Sick Leave": 2 })
+    ).toEqual([{ type: "Sick Leave", days: 2 }]);
+  });
+
+  it("has nothing to show when every type is zero", () => {
+    expect(topDaysByType({ "Casual Leave": 0, "Sick Leave": 0 })).toEqual([]);
+    expect(topDaysByType({})).toEqual([]);
+  });
+
+  it("puts the biggest type first", () => {
+    expect(
+      topDaysByType({ "Casual Leave": 1, "Sick Leave": 4, "Earned Leave": 2 })
+    ).toEqual([
+      { type: "Sick Leave", days: 4 },
+      { type: "Earned Leave", days: 2 },
+      { type: "Casual Leave", days: 1 },
+    ]);
+  });
+
+  it("settles a tie by name so the order never wobbles", () => {
+    const tied = { Sick: 2, Casual: 2, Earned: 2 };
+
+    expect(topDaysByType(tied).map((row) => row.type)).toEqual([
+      "Casual",
+      "Earned",
+      "Sick",
+    ]);
+    expect(topDaysByType({ Earned: 2, Sick: 2, Casual: 2 })).toEqual(
+      topDaysByType(tied)
+    );
+  });
+
+  it("shows at most four types", () => {
+    const many = { a: 6, b: 5, c: 4, d: 3, e: 2, f: 1 };
+
+    expect(topDaysByType(many).map((row) => row.type)).toEqual([
+      "a",
+      "b",
+      "c",
+      "d",
+    ]);
+    expect(topDaysByType(many, 2).map((row) => row.type)).toEqual(["a", "b"]);
+  });
+
+  it("ignores days that are negative or not a number", () => {
+    expect(
+      topDaysByType({
+        Good: 1,
+        Negative: -3,
+        Broken: Number.NaN,
+        Endless: Number.POSITIVE_INFINITY,
+      })
+    ).toEqual([{ type: "Good", days: 1 }]);
+  });
+});
+
 describe("withdrawn requests", () => {
   const kept = entry({
     id: "kept",
@@ -114,7 +314,7 @@ describe("withdrawn requests", () => {
 
     expect(person.requests).toBe(1);
     expect(person.days).toBe(2);
-    expect(person.byType).toEqual({ "Casual Leave": 1 });
+    expect(person.daysByType).toEqual({ "Casual Leave": 2 });
     expect(person.outcomes).toEqual({
       approved: 1,
       rejected: 0,
@@ -836,7 +1036,7 @@ describe("fillTeamRoster", () => {
       name: "Vikram Singh",
       requests: 0,
       days: 0,
-      byType: {},
+      daysByType: {},
       outcomes: { approved: 0, rejected: 0, handled: 0, pending: 0 },
       entries: [],
     });
@@ -875,7 +1075,7 @@ describe("fillTeamRoster", () => {
       name: "Asha Rao",
       requests: 1,
       days: 1,
-      byType: {},
+      daysByType: {},
       outcomes: { approved: 1, rejected: 0, handled: 0, pending: 0 },
       entries: [],
     };
@@ -919,6 +1119,119 @@ describe("fillTeamRoster", () => {
 
     expect(filled).toHaveLength(4);
     expect(filled.filter((p) => p.name === "Asha Rao")).toHaveLength(2);
+  });
+});
+
+describe("chartTicks", () => {
+  it("still gives a scale to read when nobody was off", () => {
+    expect(chartTicks(0)).toEqual([0, 1]);
+  });
+
+  it("tops out at one when at most one person was off", () => {
+    expect(chartTicks(1)).toEqual([0, 1]);
+  });
+
+  it("counts up in ones while that fits in four ticks", () => {
+    expect(chartTicks(2)).toEqual([0, 1, 2]);
+    expect(chartTicks(3)).toEqual([0, 1, 2, 3]);
+  });
+
+  it("widens the step rather than crowd in a fifth tick", () => {
+    expect(chartTicks(4)).toEqual([0, 2, 4]);
+    expect(chartTicks(7)).toEqual([0, 3, 6, 9]);
+    expect(chartTicks(12)).toEqual([0, 4, 8, 12]);
+  });
+
+  it("keeps every tick a whole number of people", () => {
+    for (let peak = 0; peak <= 60; peak += 1) {
+      for (const tick of chartTicks(peak)) {
+        expect(Number.isInteger(tick)).toBe(true);
+      }
+    }
+  });
+
+  it("always starts at zero, rises evenly and clears the peak", () => {
+    for (let peak = 0; peak <= 60; peak += 1) {
+      const ticks = chartTicks(peak);
+
+      expect(ticks[0]).toBe(0);
+      expect(ticks.length).toBeGreaterThanOrEqual(2);
+      expect(ticks.length).toBeLessThanOrEqual(4);
+      expect(ticks[ticks.length - 1]).toBeGreaterThanOrEqual(peak);
+      expect(ticks[ticks.length - 1]).toBeGreaterThan(0);
+
+      const step = ticks[1] - ticks[0];
+      for (let i = 1; i < ticks.length; i += 1) {
+        expect(ticks[i] - ticks[i - 1]).toBe(step);
+      }
+    }
+  });
+
+  it("falls back to a readable scale for a peak that makes no sense", () => {
+    expect(chartTicks(-4)).toEqual([0, 1]);
+    expect(chartTicks(Number.NaN)).toEqual([0, 1]);
+    expect(chartTicks(Number.POSITIVE_INFINITY)).toEqual([0, 1]);
+    expect(chartTicks(Number.NEGATIVE_INFINITY)).toEqual([0, 1]);
+  });
+
+  it("lifts a fractional peak to the whole person above it", () => {
+    expect(chartTicks(2.4)).toEqual([0, 1, 2, 3]);
+  });
+});
+
+describe("narrowDayLabels", () => {
+  it("always shows the first and last date of every month length", () => {
+    for (const days of [28, 29, 30, 31]) {
+      const shown = narrowDayLabels(days);
+
+      expect(shown).toHaveLength(days);
+      expect(shown[0]).toBe(true);
+      expect(shown[days - 1]).toBe(true);
+    }
+  });
+
+  it("never leaves two shown dates side by side", () => {
+    for (const days of [28, 29, 30, 31]) {
+      const shown = narrowDayLabels(days);
+
+      for (let i = 1; i < days; i += 1) {
+        expect(shown[i] && shown[i - 1]).toBe(false);
+      }
+    }
+  });
+
+  it("drops roughly half the dates so each one has room", () => {
+    for (const days of [28, 29, 30, 31]) {
+      const kept = narrowDayLabels(days).filter(Boolean).length;
+
+      expect(kept).toBeLessThanOrEqual(Math.ceil(days / 2) + 1);
+      expect(kept).toBeGreaterThanOrEqual(Math.floor(days / 2));
+    }
+  });
+
+  it("skips the date next to the last one so they cannot collide", () => {
+    expect(narrowDayLabels(30)[28]).toBe(false);
+    expect(narrowDayLabels(30)[29]).toBe(true);
+  });
+
+  it("copes with a month too short to thin out", () => {
+    expect(narrowDayLabels(1)).toEqual([true]);
+    expect(narrowDayLabels(2)).toEqual([true, true]);
+    expect(narrowDayLabels(3)).toEqual([true, false, true]);
+  });
+
+  it("has nothing to show for an empty or nonsense month", () => {
+    expect(narrowDayLabels(0)).toEqual([]);
+    expect(narrowDayLabels(-5)).toEqual([]);
+    expect(narrowDayLabels(Number.NaN)).toEqual([]);
+    expect(narrowDayLabels(Number.POSITIVE_INFINITY)).toEqual([]);
+    expect(narrowDayLabels(Number.NEGATIVE_INFINITY)).toEqual([]);
+  });
+
+  it("gives one answer per plotted day", () => {
+    const points = dailyLeaveCounts([], "2026-09");
+
+    expect(narrowDayLabels(points.length)).toHaveLength(points.length);
   });
 });
 

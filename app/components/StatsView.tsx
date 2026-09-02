@@ -4,12 +4,15 @@ import { useId, useMemo, useState } from "react";
 import {
   aggregateStats,
   buildStatsMonths,
+  chartTicks,
   dailyLeaveCounts,
   entriesInMonth,
   fillTeamRoster,
+  narrowDayLabels,
   statsMonthKey,
   statsMonthLabel,
   statsMonthShortLabel,
+  topDaysByType,
   type DailyLeavePoint,
   type StatsEmployee,
   type StatsEmployeeEntry,
@@ -34,7 +37,7 @@ const CHART_WIDTH = 300;
 const CHART_HEIGHT = 88;
 const CHART_TOP = 6;
 const CHART_BASELINE = 82;
-const AXIS_DAYS = [1, 8, 15, 22];
+const PLOT_HEIGHT = "h-24 sm:h-32";
 
 function Label({ children }: { children: React.ReactNode }) {
   return (
@@ -68,11 +71,9 @@ function memberKey(person: { code: string; name: string }) {
   return `${person.code}-${person.name}`;
 }
 
-function breakdown(byType: Record<string, number>) {
-  return Object.entries(byType)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 4)
-    .map(([type, count]) => `${count} ${leaveTypeShort(type)}`)
+function breakdown(daysByType: Record<string, number>) {
+  return topDaysByType(daysByType)
+    .map((row) => `${formatNumber(row.days)} ${leaveTypeShort(row.type)}`)
     .join(" · ");
 }
 
@@ -255,6 +256,17 @@ function Skeleton() {
   return (
     <div className="mt-10 space-y-12">
       <div className="space-y-4">
+        <div className="skeleton h-3 w-36 rounded" />
+        <div className="flex items-stretch gap-1.5">
+          <div className={`skeleton w-5 shrink-0 rounded sm:w-6 ${PLOT_HEIGHT}`} />
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className={`skeleton w-full rounded ${PLOT_HEIGHT}`} />
+            <div className="skeleton h-2.5 w-full rounded" />
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-4">
         <div className="skeleton h-3 w-28 rounded" />
         <div className="border-y border-[var(--border)] py-5">
           <div className="skeleton h-24 w-full rounded" />
@@ -347,7 +359,7 @@ function TopTakers({ data }: { data: StatsPayload }) {
                     />
                   </span>
                   <span className="mt-2 block font-mono text-[11px] text-[var(--text-muted)]">
-                    {breakdown(person.byType) ||
+                    {breakdown(person.daysByType) ||
                       `${person.requests} ${
                         person.requests === 1 ? "request" : "requests"
                       }`}
@@ -669,14 +681,18 @@ function DailyPattern({
   );
   const busiest = points[busiestIndex];
   const peak = busiest.people;
-  const lastDay = points[points.length - 1].day;
+
+  const ticks = chartTicks(peak);
+  const ceiling = ticks[ticks.length - 1];
+  const showOnNarrow = narrowDayLabels(points.length);
 
   const atDay = (index: number) =>
     ((index + 0.5) / points.length) * CHART_WIDTH;
   const atPeople = (people: number) =>
-    peak > 0
-      ? CHART_BASELINE - (people / peak) * (CHART_BASELINE - CHART_TOP)
-      : CHART_BASELINE;
+    CHART_BASELINE - (people / ceiling) * (CHART_BASELINE - CHART_TOP);
+  const downFromTop = (y: number) => `${((y / CHART_HEIGHT) * 100).toFixed(3)}%`;
+  const acrossTo = (index: number) =>
+    `${(((index + 0.5) / points.length) * 100).toFixed(3)}%`;
 
   const line = points
     .map(
@@ -706,59 +722,87 @@ function DailyPattern({
         </span>
       </div>
 
-      <svg
-        role="img"
-        aria-label={summary}
-        viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-        preserveAspectRatio="xMidYMid meet"
-        className="mt-4 block h-auto w-full"
-      >
-        <title id={titleId}>{summary}</title>
-        <line
-          x1="0"
-          y1={CHART_BASELINE}
-          x2={CHART_WIDTH}
-          y2={CHART_BASELINE}
-          stroke="var(--border)"
-          strokeWidth="1"
-          vectorEffect="non-scaling-stroke"
-        />
-        <path d={under} fill="var(--accent-soft)" />
-        <path
-          d={line}
-          fill="none"
-          stroke="var(--accent)"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
-        />
-        {peak > 0 && (
-          <circle
-            cx={atDay(busiestIndex).toFixed(2)}
-            cy={atPeople(peak).toFixed(2)}
-            r="2"
-            fill="var(--accent)"
-          />
-        )}
-      </svg>
+      <div className="mt-4 flex items-stretch gap-1.5">
+        <div
+          aria-hidden="true"
+          className={`relative w-5 shrink-0 sm:w-6 ${PLOT_HEIGHT}`}
+        >
+          {ticks.map((tick) => (
+            <span
+              key={tick}
+              className="absolute right-0 -translate-y-1/2 font-mono text-[10px] leading-none tabular-nums text-[var(--text-muted)]"
+              style={{ top: downFromTop(atPeople(tick)) }}
+            >
+              {tick}
+            </span>
+          ))}
+        </div>
 
-      <div
-        className="mt-2 grid"
-        style={{
-          gridTemplateColumns: `repeat(${points.length}, minmax(0, 1fr))`,
-        }}
-      >
-        {points.map((point) => (
-          <span
-            key={point.ymd}
-            className="whitespace-nowrap text-center font-mono text-[10px] tabular-nums text-[var(--text-muted)]"
+        <div className="min-w-0 flex-1">
+          <div className={`relative ${PLOT_HEIGHT}`}>
+            <svg
+              role="img"
+              aria-label={summary}
+              viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+              preserveAspectRatio="none"
+              className="block h-full w-full"
+            >
+              <title id={titleId}>{summary}</title>
+              {ticks.map((tick) => (
+                <line
+                  key={tick}
+                  x1="0"
+                  y1={atPeople(tick).toFixed(2)}
+                  x2={CHART_WIDTH}
+                  y2={atPeople(tick).toFixed(2)}
+                  stroke={
+                    tick === 0 ? "var(--border-strong)" : "var(--border)"
+                  }
+                  strokeWidth="1"
+                  vectorEffect="non-scaling-stroke"
+                />
+              ))}
+              <path d={under} fill="var(--accent-soft)" />
+              <path
+                d={line}
+                fill="none"
+                stroke="var(--accent)"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
+              />
+            </svg>
+            {peak > 0 && (
+              <span
+                aria-hidden="true"
+                className="absolute h-[5px] w-[5px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--accent)]"
+                style={{
+                  left: acrossTo(busiestIndex),
+                  top: downFromTop(atPeople(peak)),
+                }}
+              />
+            )}
+          </div>
+
+          <div
+            className="mt-2 grid"
+            style={{
+              gridTemplateColumns: `repeat(${points.length}, minmax(0, 1fr))`,
+            }}
           >
-            {AXIS_DAYS.includes(point.day) || point.day === lastDay
-              ? point.day
-              : ""}
-          </span>
-        ))}
+            {points.map((point, i) => (
+              <span
+                key={point.ymd}
+                className={`whitespace-nowrap text-center font-mono text-[10px] leading-none tabular-nums text-[var(--text-muted)] ${
+                  showOnNarrow[i] ? "" : "hidden sm:block"
+                }`}
+              >
+                {point.day}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
     </section>
   );
