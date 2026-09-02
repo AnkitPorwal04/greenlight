@@ -4,9 +4,11 @@ import {
   aggregateStatsForTeam,
   buildStatsMonths,
   entriesInMonth,
+  fillTeamRoster,
   statsMonthKey,
   statsMonthLabel,
   statsMonthShortLabel,
+  teamRoster,
   type StatsEntry,
 } from "./stats";
 
@@ -94,7 +96,6 @@ describe("withdrawn requests", () => {
       applied: 1,
       approved: 1,
       rejected: 0,
-      withdrawn: 1,
       handled: 0,
       pending: 0,
     });
@@ -104,7 +105,7 @@ describe("withdrawn requests", () => {
     expect(stats.byType).toEqual([
       { type: "Casual Leave", requests: 1, days: 2 },
     ]);
-    expect(stats.totalRequests).toBe(2);
+    expect(stats.totalRequests).toBe(1);
   });
 
   it("never inflates the person it belongs to", () => {
@@ -113,18 +114,25 @@ describe("withdrawn requests", () => {
     expect(person.requests).toBe(1);
     expect(person.days).toBe(2);
     expect(person.byType).toEqual({ "Casual Leave": 1 });
-    expect(person.outcomes.withdrawn).toBe(1);
-    expect(person.outcomes.approved).toBe(1);
+    expect(person.outcomes).toEqual({
+      approved: 1,
+      rejected: 0,
+      handled: 0,
+      pending: 0,
+    });
   });
 
-  it("still shows up in that person's own request list", () => {
+  it("is gone from that person's own request list", () => {
     const person = aggregateStats([kept, pulled]).byEmployee[0];
 
-    expect(person.entries.map((e) => e.status)).toEqual([
-      "withdrawn",
-      "approved",
-    ]);
-    expect(person.entries).toHaveLength(person.requests + 1);
+    expect(person.entries.map((e) => e.status)).toEqual(["approved"]);
+    expect(person.entries).toHaveLength(person.requests);
+  });
+
+  it("never reaches the entries the client re-aggregates from", () => {
+    const stats = aggregateStats([kept, pulled]);
+
+    expect(stats.entries.map((e) => e.id)).toEqual(["kept"]);
   });
 
   it("leaves the ranking by days untouched", () => {
@@ -154,17 +162,16 @@ describe("withdrawn requests", () => {
     expect(stats.byEmployee.map((p) => p.days)).toEqual([3, 2]);
   });
 
-  it("counts a person whose only request was withdrawn at zero", () => {
+  it("leaves nothing behind when it is a person's only request", () => {
     const stats = aggregateStats([pulled]);
 
     expect(stats.outcomes.applied).toBe(0);
-    expect(stats.outcomes.withdrawn).toBe(1);
+    expect(stats.totalRequests).toBe(0);
     expect(stats.byMonth).toEqual([]);
     expect(stats.byType).toEqual([]);
-    expect(stats.byEmployee[0].requests).toBe(0);
-    expect(stats.byEmployee[0].days).toBe(0);
-    expect(stats.byEmployee[0].entries).toHaveLength(1);
-    expect(stats.sinceDate).toBe("2026-09-03T09:00:00.000Z");
+    expect(stats.byEmployee).toEqual([]);
+    expect(stats.entries).toEqual([]);
+    expect(stats.sinceDate).toBe("");
   });
 });
 
@@ -276,7 +283,7 @@ describe("buildStatsMonths", () => {
     ]);
   });
 
-  it("counts a withdrawn request in its month like any other", () => {
+  it("never lets a withdrawn request inflate a month tab count", () => {
     const months = buildStatsMonths(
       [
         entry({ id: "a", receivedAt: "2026-09-02T09:00:00.000Z" }),
@@ -290,8 +297,25 @@ describe("buildStatsMonths", () => {
     );
 
     expect(months).toEqual([
-      { key: "2026-09", label: "September 2026", count: 2 },
+      { key: "2026-09", label: "September 2026", count: 1 },
     ]);
+  });
+
+  it("keeps a month tab a withdrawn request was the only reason for", () => {
+    const months = buildStatsMonths(
+      [
+        entry({
+          id: "b",
+          fromDate: "04 Nov 2026",
+          toDate: "04 Nov 2026",
+          receivedAt: "2026-10-06T09:00:00.000Z",
+          status: "withdrawn",
+        }),
+      ],
+      now
+    );
+
+    expect(months.map((m) => m.key)).toEqual(["2026-09"]);
   });
 
   it("never lets an unparseable date fall into the current month", () => {
@@ -519,11 +543,11 @@ describe("a withdrawn leave inside a month", () => {
     ]);
   });
 
-  it("keeps its outcome tile without adding days", () => {
+  it("adds neither an outcome nor a person to that month", () => {
     const september = aggregateStats(entriesInMonth([pulled], "2026-09"));
-    expect(september.outcomes.withdrawn).toBe(1);
     expect(september.outcomes.applied).toBe(0);
-    expect(september.byEmployee[0].days).toBe(0);
+    expect(september.totalRequests).toBe(0);
+    expect(september.byEmployee).toEqual([]);
   });
 });
 
@@ -700,7 +724,6 @@ describe("aggregateStatsForTeam", () => {
       applied: 1,
       approved: 1,
       rejected: 0,
-      withdrawn: 0,
       handled: 0,
       pending: 0,
     });
@@ -749,5 +772,151 @@ describe("aggregateStatsForTeam", () => {
 
     expect(stats.totalRequests).toBe(1);
     expect(stats.byEmployee.map((p) => p.code)).toEqual(["GRP1042"]);
+  });
+});
+
+describe("teamRoster", () => {
+  const directory = {
+    GRP1042: { name: "Asha Rao" },
+    GRP2001: { name: "Vikram Singh" },
+  };
+
+  it("names every configured team member from the directory", () => {
+    expect(teamRoster(["GRP1042", "GRP2001"], directory)).toEqual([
+      { code: "GRP1042", name: "Asha Rao" },
+      { code: "GRP2001", name: "Vikram Singh" },
+    ]);
+  });
+
+  it("falls back to the bare code when the directory has never heard of them", () => {
+    expect(teamRoster(["GRP9999"], directory)).toEqual([
+      { code: "GRP9999", name: "GRP9999" },
+    ]);
+  });
+
+  it("normalises case and stray spacing the way the team filter does", () => {
+    expect(teamRoster([" grp1042 "], directory)).toEqual([
+      { code: "GRP1042", name: "Asha Rao" },
+    ]);
+  });
+
+  it("drops blanks and repeats", () => {
+    expect(
+      teamRoster(["GRP1042", "", "   ", "grp1042"], directory).map((m) => m.code)
+    ).toEqual(["GRP1042"]);
+  });
+
+  it("stays empty when no team is configured", () => {
+    expect(teamRoster([], directory)).toEqual([]);
+  });
+});
+
+describe("fillTeamRoster", () => {
+  const roster = [
+    { code: "GRP1042", name: "Asha Rao" },
+    { code: "GRP2001", name: "Vikram Singh" },
+    { code: "GRP3003", name: "Meera Nair" },
+  ];
+
+  it("adds a zero row for a team member who took nothing", () => {
+    const { byEmployee } = aggregateStats([
+      entry({ id: "a", employeeCode: "GRP1042", numberOfDays: 2 }),
+    ]);
+
+    const filled = fillTeamRoster(byEmployee, roster);
+
+    expect(filled.map((p) => p.code)).toEqual([
+      "GRP1042",
+      "GRP2001",
+      "GRP3003",
+    ]);
+    expect(filled[1]).toEqual({
+      code: "GRP2001",
+      name: "Vikram Singh",
+      requests: 0,
+      days: 0,
+      byType: {},
+      outcomes: { approved: 0, rejected: 0, handled: 0, pending: 0 },
+      entries: [],
+    });
+  });
+
+  it("never duplicates a person who already has leave", () => {
+    const { byEmployee } = aggregateStats([
+      entry({ id: "a", employeeCode: "grp1042", numberOfDays: 2 }),
+      entry({ id: "b", employeeCode: " GRP1042 ", numberOfDays: 1 }),
+    ]);
+
+    const filled = fillTeamRoster(byEmployee, roster);
+
+    expect(filled.filter((p) => p.code === "GRP1042")).toHaveLength(1);
+    expect(filled.find((p) => p.code === "GRP1042")?.days).toBe(3);
+  });
+
+  it("keeps the ranking by days, with the zero rows last", () => {
+    const { byEmployee } = aggregateStats([
+      entry({ id: "a", employeeCode: "GRP1042", numberOfDays: 1 }),
+      entry({ id: "b", employeeCode: "GRP2001", numberOfDays: 4 }),
+    ]);
+
+    const filled = fillTeamRoster(byEmployee, roster);
+
+    expect(filled.map((p) => [p.code, p.days])).toEqual([
+      ["GRP2001", 4],
+      ["GRP1042", 1],
+      ["GRP3003", 0],
+    ]);
+  });
+
+  it("ranks by days even when the rows arrive out of order", () => {
+    const quiet = {
+      code: "GRP1042",
+      name: "Asha Rao",
+      requests: 1,
+      days: 1,
+      byType: {},
+      outcomes: { approved: 1, rejected: 0, handled: 0, pending: 0 },
+      entries: [],
+    };
+    const busy = { ...quiet, code: "GRP2001", name: "Vikram Singh", days: 4 };
+
+    const filled = fillTeamRoster([quiet, busy], roster);
+
+    expect(filled.map((p) => [p.code, p.days])).toEqual([
+      ["GRP2001", 4],
+      ["GRP1042", 1],
+      ["GRP3003", 0],
+    ]);
+  });
+
+  it("puts the whole team on at zero when nobody took leave", () => {
+    const filled = fillTeamRoster([], roster);
+
+    expect(filled.map((p) => p.code)).toEqual([
+      "GRP1042",
+      "GRP2001",
+      "GRP3003",
+    ]);
+    expect(filled.every((p) => p.days === 0 && p.requests === 0)).toBe(true);
+  });
+
+  it("never invents a roster when the manager has no team configured", () => {
+    const { byEmployee } = aggregateStats([
+      entry({ id: "a", employeeCode: "GRP1042", numberOfDays: 2 }),
+    ]);
+
+    expect(fillTeamRoster(byEmployee, [])).toBe(byEmployee);
+    expect(fillTeamRoster(byEmployee, undefined)).toBe(byEmployee);
+  });
+
+  it("leaves a person with no code alone instead of merging them into a member", () => {
+    const { byEmployee } = aggregateStats([
+      entry({ id: "a", employeeCode: "", employeeName: "Asha Rao" }),
+    ]);
+
+    const filled = fillTeamRoster(byEmployee, roster);
+
+    expect(filled).toHaveLength(4);
+    expect(filled.filter((p) => p.name === "Asha Rao")).toHaveLength(2);
   });
 });
