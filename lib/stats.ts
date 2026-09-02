@@ -282,6 +282,33 @@ export function dailyLeaveCounts(
   }));
 }
 
+const MAX_CHART_TICKS = 4;
+
+export function chartTicks(peak: number): number[] {
+  const highest = Number.isFinite(peak) ? Math.max(0, Math.ceil(peak)) : 0;
+  if (highest === 0) return [0, 1];
+
+  const spans = MAX_CHART_TICKS - 1;
+  let step = 1;
+  while (Math.ceil(highest / step) > spans) step += 1;
+
+  const ceiling = step * Math.ceil(highest / step);
+  const ticks: number[] = [];
+  for (let value = 0; value <= ceiling; value += step) ticks.push(value);
+  return ticks;
+}
+
+export function narrowDayLabels(count: number): boolean[] {
+  if (!Number.isFinite(count) || count <= 0) return [];
+
+  const last = Math.floor(count) - 1;
+  return Array.from({ length: Math.floor(count) }, (_, index) => {
+    if (index === 0 || index === last) return true;
+    if (index === last - 1) return false;
+    return index % 2 === 0;
+  });
+}
+
 export function entriesInMonth(
   entries: StatsEntry[],
   key: string
