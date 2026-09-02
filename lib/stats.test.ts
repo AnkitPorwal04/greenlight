@@ -4,9 +4,11 @@ import {
   aggregateStatsForTeam,
   buildStatsMonths,
   entriesInMonth,
+  fillTeamRoster,
   statsMonthKey,
   statsMonthLabel,
   statsMonthShortLabel,
+  teamRoster,
   type StatsEntry,
 } from "./stats";
 
@@ -770,5 +772,130 @@ describe("aggregateStatsForTeam", () => {
 
     expect(stats.totalRequests).toBe(1);
     expect(stats.byEmployee.map((p) => p.code)).toEqual(["GRP1042"]);
+  });
+});
+
+describe("teamRoster", () => {
+  const directory = {
+    GRP1042: { name: "Asha Rao" },
+    GRP2001: { name: "Vikram Singh" },
+  };
+
+  it("names every configured team member from the directory", () => {
+    expect(teamRoster(["GRP1042", "GRP2001"], directory)).toEqual([
+      { code: "GRP1042", name: "Asha Rao" },
+      { code: "GRP2001", name: "Vikram Singh" },
+    ]);
+  });
+
+  it("falls back to the bare code when the directory has never heard of them", () => {
+    expect(teamRoster(["GRP9999"], directory)).toEqual([
+      { code: "GRP9999", name: "GRP9999" },
+    ]);
+  });
+
+  it("normalises case and stray spacing the way the team filter does", () => {
+    expect(teamRoster([" grp1042 "], directory)).toEqual([
+      { code: "GRP1042", name: "Asha Rao" },
+    ]);
+  });
+
+  it("drops blanks and repeats", () => {
+    expect(
+      teamRoster(["GRP1042", "", "   ", "grp1042"], directory).map((m) => m.code)
+    ).toEqual(["GRP1042"]);
+  });
+
+  it("stays empty when no team is configured", () => {
+    expect(teamRoster([], directory)).toEqual([]);
+  });
+});
+
+describe("fillTeamRoster", () => {
+  const roster = [
+    { code: "GRP1042", name: "Asha Rao" },
+    { code: "GRP2001", name: "Vikram Singh" },
+    { code: "GRP3003", name: "Meera Nair" },
+  ];
+
+  it("adds a zero row for a team member who took nothing", () => {
+    const { byEmployee } = aggregateStats([
+      entry({ id: "a", employeeCode: "GRP1042", numberOfDays: 2 }),
+    ]);
+
+    const filled = fillTeamRoster(byEmployee, roster);
+
+    expect(filled.map((p) => p.code)).toEqual([
+      "GRP1042",
+      "GRP2001",
+      "GRP3003",
+    ]);
+    expect(filled[1]).toEqual({
+      code: "GRP2001",
+      name: "Vikram Singh",
+      requests: 0,
+      days: 0,
+      byType: {},
+      outcomes: { approved: 0, rejected: 0, handled: 0, pending: 0 },
+      entries: [],
+    });
+  });
+
+  it("never duplicates a person who already has leave", () => {
+    const { byEmployee } = aggregateStats([
+      entry({ id: "a", employeeCode: "grp1042", numberOfDays: 2 }),
+      entry({ id: "b", employeeCode: " GRP1042 ", numberOfDays: 1 }),
+    ]);
+
+    const filled = fillTeamRoster(byEmployee, roster);
+
+    expect(filled.filter((p) => p.code === "GRP1042")).toHaveLength(1);
+    expect(filled.find((p) => p.code === "GRP1042")?.days).toBe(3);
+  });
+
+  it("keeps the ranking by days, with the zero rows last", () => {
+    const { byEmployee } = aggregateStats([
+      entry({ id: "a", employeeCode: "GRP1042", numberOfDays: 1 }),
+      entry({ id: "b", employeeCode: "GRP2001", numberOfDays: 4 }),
+    ]);
+
+    const filled = fillTeamRoster(byEmployee, roster);
+
+    expect(filled.map((p) => [p.code, p.days])).toEqual([
+      ["GRP2001", 4],
+      ["GRP1042", 1],
+      ["GRP3003", 0],
+    ]);
+  });
+
+  it("puts the whole team on at zero when nobody took leave", () => {
+    const filled = fillTeamRoster([], roster);
+
+    expect(filled.map((p) => p.code)).toEqual([
+      "GRP1042",
+      "GRP2001",
+      "GRP3003",
+    ]);
+    expect(filled.every((p) => p.days === 0 && p.requests === 0)).toBe(true);
+  });
+
+  it("never invents a roster when the manager has no team configured", () => {
+    const { byEmployee } = aggregateStats([
+      entry({ id: "a", employeeCode: "GRP1042", numberOfDays: 2 }),
+    ]);
+
+    expect(fillTeamRoster(byEmployee, [])).toBe(byEmployee);
+    expect(fillTeamRoster(byEmployee, undefined)).toBe(byEmployee);
+  });
+
+  it("leaves a person with no code alone instead of merging them into a member", () => {
+    const { byEmployee } = aggregateStats([
+      entry({ id: "a", employeeCode: "", employeeName: "Asha Rao" }),
+    ]);
+
+    const filled = fillTeamRoster(byEmployee, roster);
+
+    expect(filled).toHaveLength(4);
+    expect(filled.filter((p) => p.name === "Asha Rao")).toHaveLength(2);
   });
 });
