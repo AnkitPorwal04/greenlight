@@ -13,7 +13,13 @@ import {
   partitionCached,
   pruneMailCache,
 } from "@/lib/mail-cache";
-import { aggregateStatsForTeam, type StatsEntry } from "@/lib/stats";
+import {
+  aggregateStatsForTeam,
+  isWithdrawn,
+  teamRoster,
+  type StatsEntry,
+} from "@/lib/stats";
+import { loadEmployees } from "@/lib/employees";
 import { cancelledLeaveTimes, isLeaveCancelled } from "@/lib/cancellation";
 import { fetchDirectRequests } from "@/lib/direct-fetch";
 import { dedupeLeaves, type DedupableRow } from "@/lib/dedupe";
@@ -47,17 +53,19 @@ export async function GET(req: NextRequest) {
 
   try {
     const gmail = getGmail(client);
-    const [profile, list, decisions, team, mailCache] = await Promise.all([
-      gmail.users.getProfile({ userId: "me" }),
-      gmail.users.messages.list({
-        userId: "me",
-        q: `${LEAVE_MAIL_QUERY} after:${STATS_SINCE}`,
-        maxResults: MAX_MESSAGES,
-      }),
-      loadDecisions(user),
-      loadTeam(user),
-      loadMailCache(user),
-    ]);
+    const [profile, list, decisions, team, mailCache, directory] =
+      await Promise.all([
+        gmail.users.getProfile({ userId: "me" }),
+        gmail.users.messages.list({
+          userId: "me",
+          q: `${LEAVE_MAIL_QUERY} after:${STATS_SINCE}`,
+          maxResults: MAX_MESSAGES,
+        }),
+        loadDecisions(user),
+        loadTeam(user),
+        loadMailCache(user),
+        loadEmployees(),
+      ]);
 
     const selfEmail = profile.data.emailAddress ?? "";
     const ids = [
@@ -160,6 +168,7 @@ export async function GET(req: NextRequest) {
       // Neither is a leave the employee later cancelled.
       if (isLeaveCancelled({ ...r.parsed, receivedAt: r.receivedMs }, cancelled))
         continue;
+      if (isWithdrawn(r)) continue;
       entries.push({
         id: r.id,
         employeeName: r.parsed.employeeName,
@@ -178,6 +187,7 @@ export async function GET(req: NextRequest) {
       if (!keptIds.has(r.id)) continue;
       if (r.kind === "cancellation") continue;
       if (isLeaveCancelled(r, cancelled)) continue;
+      if (isWithdrawn(r)) continue;
       entries.push({
         id: r.id,
         employeeName: r.employeeName,
@@ -192,7 +202,10 @@ export async function GET(req: NextRequest) {
     }
 
     // Count only people on the manager's team (all, if no team is configured).
-    return NextResponse.json(aggregateStatsForTeam(entries, team));
+    return NextResponse.json({
+      ...aggregateStatsForTeam(entries, team),
+      roster: teamRoster(team, directory),
+    });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "gmail_error" },
