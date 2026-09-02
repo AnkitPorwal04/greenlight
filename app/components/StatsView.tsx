@@ -4,16 +4,19 @@ import { useId, useMemo, useState } from "react";
 import {
   aggregateStats,
   buildStatsMonths,
+  dailyLeaveCounts,
   entriesInMonth,
   fillTeamRoster,
   statsMonthKey,
   statsMonthLabel,
   statsMonthShortLabel,
+  type DailyLeavePoint,
   type StatsEmployee,
   type StatsEmployeeEntry,
   type StatsOutcome,
   type StatsPayload,
 } from "@/lib/stats";
+import { formatLeaveDate } from "@/lib/leave-dates";
 import { ArtTray, EmptyState } from "./States";
 import {
   IconAlert,
@@ -26,6 +29,12 @@ import { MonthTabs } from "./Shell";
 import { avatarTone, initials, leaveTypeColor, leaveTypeShort } from "./utils";
 
 const TOP_PEOPLE = 10;
+
+const CHART_WIDTH = 300;
+const CHART_HEIGHT = 88;
+const CHART_TOP = 6;
+const CHART_BASELINE = 82;
+const AXIS_DAYS = [1, 8, 15, 22];
 
 function Label({ children }: { children: React.ReactNode }) {
   return (
@@ -245,6 +254,13 @@ function EntryList({
 function Skeleton() {
   return (
     <div className="mt-10 space-y-12">
+      <div className="space-y-4">
+        <div className="skeleton h-3 w-28 rounded" />
+        <div className="border-y border-[var(--border)] py-5">
+          <div className="skeleton h-24 w-full rounded" />
+        </div>
+      </div>
+
       <div className="space-y-4">
         <div className="skeleton h-3 w-36 rounded" />
         <div className="divide-y divide-[var(--border)] border-y border-[var(--border)]">
@@ -637,6 +653,117 @@ function ByType({ data }: { data: StatsPayload }) {
   );
 }
 
+function DailyPattern({
+  points,
+  monthLabel,
+}: {
+  points: DailyLeavePoint[];
+  monthLabel: string;
+}) {
+  const titleId = useId();
+  if (points.length === 0) return null;
+
+  const busiestIndex = points.reduce(
+    (best, point, i) => (point.people > points[best].people ? i : best),
+    0
+  );
+  const busiest = points[busiestIndex];
+  const peak = busiest.people;
+  const lastDay = points[points.length - 1].day;
+
+  const atDay = (index: number) =>
+    ((index + 0.5) / points.length) * CHART_WIDTH;
+  const atPeople = (people: number) =>
+    peak > 0
+      ? CHART_BASELINE - (people / peak) * (CHART_BASELINE - CHART_TOP)
+      : CHART_BASELINE;
+
+  const line = points
+    .map(
+      (point, i) =>
+        `${i === 0 ? "M" : "L"}${atDay(i).toFixed(2)} ${atPeople(
+          point.people
+        ).toFixed(2)}`
+    )
+    .join(" ");
+  const under = `${line} L${atDay(points.length - 1).toFixed(
+    2
+  )} ${CHART_BASELINE} L${atDay(0).toFixed(2)} ${CHART_BASELINE} Z`;
+
+  const summary =
+    peak > 0
+      ? `People on leave each day of ${monthLabel}. Busiest day ${formatLeaveDate(
+          busiest.ymd
+        )} with ${peak} ${peak === 1 ? "person" : "people"} off.`
+      : `People on leave each day of ${monthLabel}. Nobody was off on any day.`;
+
+  return (
+    <section className="border-t border-[var(--border)] pb-6 pt-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+        <Label>People off each day</Label>
+        <span className="font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
+          peak {peak}
+        </span>
+      </div>
+
+      <svg
+        role="img"
+        aria-label={summary}
+        viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+        preserveAspectRatio="xMidYMid meet"
+        className="mt-4 block h-auto w-full"
+      >
+        <title id={titleId}>{summary}</title>
+        <line
+          x1="0"
+          y1={CHART_BASELINE}
+          x2={CHART_WIDTH}
+          y2={CHART_BASELINE}
+          stroke="var(--border)"
+          strokeWidth="1"
+          vectorEffect="non-scaling-stroke"
+        />
+        <path d={under} fill="var(--accent-soft)" />
+        <path
+          d={line}
+          fill="none"
+          stroke="var(--accent)"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+        {peak > 0 && (
+          <circle
+            cx={atDay(busiestIndex).toFixed(2)}
+            cy={atPeople(peak).toFixed(2)}
+            r="2"
+            fill="var(--accent)"
+          />
+        )}
+      </svg>
+
+      <div
+        className="mt-2 grid"
+        style={{
+          gridTemplateColumns: `repeat(${points.length}, minmax(0, 1fr))`,
+        }}
+      >
+        {points.map((point) => (
+          <span
+            key={point.ymd}
+            className="whitespace-nowrap text-center font-mono text-[10px] tabular-nums text-[var(--text-muted)]"
+          >
+            {AXIS_DAYS.includes(point.day) || point.day === lastDay
+              ? point.day
+              : ""}
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function MonthScopedStats({
   data,
   loading,
@@ -668,6 +795,11 @@ function MonthScopedStats({
     };
   }, [data, activeKey]);
 
+  const dailyPoints = useMemo(
+    () => dailyLeaveCounts(data.entries, activeKey),
+    [data, activeKey]
+  );
+
   return (
     <div className={loading ? "opacity-60 transition-opacity" : ""}>
       <MonthTabs
@@ -687,6 +819,10 @@ function MonthScopedStats({
         </div>
       ) : (
         <>
+          <DailyPattern
+            points={dailyPoints}
+            monthLabel={statsMonthLabel(activeKey)}
+          />
           <Overview
             data={monthData}
             monthLabel={statsMonthShortLabel(activeKey)}
