@@ -3,6 +3,7 @@ import {
   aggregateStats,
   aggregateStatsForTeam,
   buildStatsMonths,
+  dailyLeaveCounts,
   entriesInMonth,
   fillTeamRoster,
   statsMonthKey,
@@ -918,5 +919,236 @@ describe("fillTeamRoster", () => {
 
     expect(filled).toHaveLength(4);
     expect(filled.filter((p) => p.name === "Asha Rao")).toHaveLength(2);
+  });
+});
+
+describe("dailyLeaveCounts", () => {
+  const leave = (over: Partial<StatsEntry>) =>
+    entry({ fromDate: "01 Sep 2026", toDate: "01 Sep 2026", ...over });
+
+  it("emits one point per calendar day of a 30-day month", () => {
+    const points = dailyLeaveCounts([], "2026-09");
+
+    expect(points).toHaveLength(30);
+    expect(points[0].ymd).toBe("2026-09-01");
+    expect(points[29].ymd).toBe("2026-09-30");
+  });
+
+  it("emits one point per calendar day of a 31-day month", () => {
+    const points = dailyLeaveCounts([], "2026-08");
+
+    expect(points).toHaveLength(31);
+    expect(points.at(-1)?.ymd).toBe("2026-08-31");
+  });
+
+  it("gives February 29 points in a leap year", () => {
+    const points = dailyLeaveCounts([], "2028-02");
+
+    expect(points).toHaveLength(29);
+    expect(points.at(-1)).toEqual({ ymd: "2028-02-29", day: 29, people: 0 });
+  });
+
+  it("gives February 28 points outside a leap year", () => {
+    const points = dailyLeaveCounts([], "2026-02");
+
+    expect(points).toHaveLength(28);
+    expect(points.at(-1)).toEqual({ ymd: "2026-02-28", day: 28, people: 0 });
+  });
+
+  it("stays inside the asked-for month on every point, in ascending order", () => {
+    const points = dailyLeaveCounts(
+      [leave({ id: "a", fromDate: "28 Aug 2026", toDate: "03 Sep 2026" })],
+      "2026-09"
+    );
+
+    expect(points.every((p) => p.ymd.slice(0, 7) === "2026-09")).toBe(true);
+    expect(points.map((p) => p.day)).toEqual(
+      Array.from({ length: 30 }, (_, i) => i + 1)
+    );
+    expect([...points].sort((a, b) => a.ymd.localeCompare(b.ymd))).toEqual(
+      points
+    );
+  });
+
+  it("counts the people out on each day of a span", () => {
+    const points = dailyLeaveCounts(
+      [
+        leave({
+          id: "a",
+          employeeCode: "GRP1042",
+          fromDate: "10 Sep 2026",
+          toDate: "12 Sep 2026",
+        }),
+        leave({
+          id: "b",
+          employeeCode: "GRP2001",
+          employeeName: "Vikram Singh",
+          fromDate: "12 Sep 2026",
+          toDate: "12 Sep 2026",
+        }),
+      ],
+      "2026-09"
+    );
+
+    const byDay = new Map(points.map((p) => [p.day, p.people]));
+    expect(byDay.get(9)).toBe(0);
+    expect(byDay.get(10)).toBe(1);
+    expect(byDay.get(11)).toBe(1);
+    expect(byDay.get(12)).toBe(2);
+    expect(byDay.get(13)).toBe(0);
+  });
+
+  it("counts one person once when two of their requests overlap the same day", () => {
+    const points = dailyLeaveCounts(
+      [
+        leave({
+          id: "a",
+          employeeCode: "GRP1042",
+          fromDate: "10 Sep 2026",
+          toDate: "12 Sep 2026",
+        }),
+        leave({
+          id: "b",
+          employeeCode: "grp1042",
+          fromDate: "12 Sep 2026",
+          toDate: "14 Sep 2026",
+        }),
+      ],
+      "2026-09"
+    );
+
+    expect(points.filter((p) => p.people > 0).map((p) => [p.day, p.people])).toEqual(
+      [
+        [10, 1],
+        [11, 1],
+        [12, 1],
+        [13, 1],
+        [14, 1],
+      ]
+    );
+  });
+
+  it("splits a leave that crosses a month boundary across both charts", () => {
+    const crossing = leave({
+      id: "a",
+      fromDate: "30 Aug 2026",
+      toDate: "02 Sep 2026",
+    });
+
+    const august = dailyLeaveCounts([crossing], "2026-08");
+    const september = dailyLeaveCounts([crossing], "2026-09");
+
+    expect(august.filter((p) => p.people > 0).map((p) => p.day)).toEqual([
+      30, 31,
+    ]);
+    expect(september.filter((p) => p.people > 0).map((p) => p.day)).toEqual([
+      1, 2,
+    ]);
+  });
+
+  it("still returns a full month of zeros when nobody took leave", () => {
+    const points = dailyLeaveCounts(
+      [leave({ id: "a", fromDate: "04 Jul 2026", toDate: "06 Jul 2026" })],
+      "2026-09"
+    );
+
+    expect(points).toHaveLength(30);
+    expect(points.every((p) => p.people === 0)).toBe(true);
+  });
+
+  it("keeps quiet days in the middle of a month instead of skipping them", () => {
+    const points = dailyLeaveCounts(
+      [
+        leave({ id: "a", fromDate: "02 Sep 2026", toDate: "02 Sep 2026" }),
+        leave({ id: "b", fromDate: "28 Sep 2026", toDate: "28 Sep 2026" }),
+      ],
+      "2026-09"
+    );
+
+    expect(points).toHaveLength(30);
+    expect(points.slice(2, 27).every((p) => p.people === 0)).toBe(true);
+  });
+
+  it("ignores withdrawn requests", () => {
+    const points = dailyLeaveCounts(
+      [
+        leave({
+          id: "a",
+          fromDate: "12 Sep 2026",
+          toDate: "12 Sep 2026",
+          status: "withdrawn",
+        }),
+      ],
+      "2026-09"
+    );
+
+    expect(points.every((p) => p.people === 0)).toBe(true);
+  });
+
+  it("leaves unparseable leave dates off the chart instead of using the mail date", () => {
+    const points = dailyLeaveCounts(
+      [
+        entry({
+          id: "a",
+          fromDate: "",
+          toDate: "",
+          receivedAt: "2026-09-14T09:00:00.000Z",
+        }),
+        entry({
+          id: "b",
+          fromDate: "32 Sep 2026",
+          toDate: "32 Sep 2026",
+          receivedAt: "2026-09-15T09:00:00.000Z",
+        }),
+      ],
+      "2026-09"
+    );
+
+    expect(points).toHaveLength(30);
+    expect(points.every((p) => p.people === 0)).toBe(true);
+  });
+
+  it("leaves an absurdly long span off the chart", () => {
+    const points = dailyLeaveCounts(
+      [leave({ id: "a", fromDate: "01 Jan 2025", toDate: "31 Dec 2026" })],
+      "2026-09"
+    );
+
+    expect(points.every((p) => p.people === 0)).toBe(true);
+  });
+
+  it("falls back to the name when a person has no employee code", () => {
+    const points = dailyLeaveCounts(
+      [
+        leave({
+          id: "a",
+          employeeCode: " ",
+          employeeName: "Asha Rao",
+          fromDate: "12 Sep 2026",
+          toDate: "12 Sep 2026",
+        }),
+        leave({
+          id: "b",
+          employeeCode: "",
+          employeeName: "asha rao",
+          fromDate: "12 Sep 2026",
+          toDate: "12 Sep 2026",
+        }),
+      ],
+      "2026-09"
+    );
+
+    expect(points.find((p) => p.day === 12)?.people).toBe(1);
+  });
+
+  it("returns nothing for a missing or malformed month key", () => {
+    const entries = [leave({ id: "a" })];
+
+    expect(dailyLeaveCounts(entries, "")).toEqual([]);
+    expect(dailyLeaveCounts(entries, "2026-13")).toEqual([]);
+    expect(dailyLeaveCounts(entries, "2026-00")).toEqual([]);
+    expect(dailyLeaveCounts(entries, "2026-9")).toEqual([]);
+    expect(dailyLeaveCounts(entries, "2026-09-01")).toEqual([]);
+    expect(dailyLeaveCounts(entries, "September")).toEqual([]);
   });
 });
