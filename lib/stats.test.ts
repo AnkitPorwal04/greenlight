@@ -1224,6 +1224,8 @@ describe("narrowDayLabels", () => {
     expect(narrowDayLabels(0)).toEqual([]);
     expect(narrowDayLabels(-5)).toEqual([]);
     expect(narrowDayLabels(Number.NaN)).toEqual([]);
+    expect(narrowDayLabels(Number.POSITIVE_INFINITY)).toEqual([]);
+    expect(narrowDayLabels(Number.NEGATIVE_INFINITY)).toEqual([]);
   });
 
   it("gives one answer per plotted day", () => {
