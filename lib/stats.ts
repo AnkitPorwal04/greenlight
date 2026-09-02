@@ -231,6 +231,57 @@ function dayOwners(
   return owners;
 }
 
+export interface DailyLeavePoint {
+  ymd: string;
+  day: number;
+  people: number;
+}
+
+const MONTH_KEY_SHAPE = /^\d{4}-(0[1-9]|1[0-2])$/;
+const LONGEST_MONTH_DAYS = 31;
+
+function calendarDaysOfMonth(key: string): string[] {
+  if (!MONTH_KEY_SHAPE.test(key)) return [];
+
+  const days: string[] = [];
+  for (let day = 1; day <= LONGEST_MONTH_DAYS; day += 1) {
+    const ymd = `${key}-${String(day).padStart(2, "0")}`;
+    if (!isValidYmd(ymd)) break;
+    days.push(ymd);
+  }
+  return days;
+}
+
+export function dailyLeaveCounts(
+  entries: StatsEntry[],
+  monthKey: string
+): DailyLeavePoint[] {
+  const calendar = calendarDaysOfMonth(monthKey);
+  if (calendar.length === 0) return [];
+
+  const peopleByDay = new Map<string, Set<string>>();
+  for (const entry of entries) {
+    if (isWithdrawn(entry)) continue;
+
+    const person = statsEmployeeKey(entry);
+    for (const day of coveredDays(entry)) {
+      if (monthOfYmd(day) !== monthKey) continue;
+      let onLeave = peopleByDay.get(day);
+      if (!onLeave) {
+        onLeave = new Set<string>();
+        peopleByDay.set(day, onLeave);
+      }
+      onLeave.add(person);
+    }
+  }
+
+  return calendar.map((ymd) => ({
+    ymd,
+    day: Number(ymd.slice(8)),
+    people: peopleByDay.get(ymd)?.size ?? 0,
+  }));
+}
+
 export function entriesInMonth(
   entries: StatsEntry[],
   key: string
