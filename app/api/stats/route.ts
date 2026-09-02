@@ -13,7 +13,7 @@ import {
   partitionCached,
   pruneMailCache,
 } from "@/lib/mail-cache";
-import { aggregateStatsForTeam, type StatsEntry } from "@/lib/stats";
+import { aggregateStatsForTeam, isWithdrawn, type StatsEntry } from "@/lib/stats";
 import { cancelledLeaveTimes, isLeaveCancelled } from "@/lib/cancellation";
 import { fetchDirectRequests } from "@/lib/direct-fetch";
 import { dedupeLeaves, type DedupableRow } from "@/lib/dedupe";
@@ -160,6 +160,7 @@ export async function GET(req: NextRequest) {
       // Neither is a leave the employee later cancelled.
       if (isLeaveCancelled({ ...r.parsed, receivedAt: r.receivedMs }, cancelled))
         continue;
+      if (isWithdrawn(r)) continue;
       entries.push({
         id: r.id,
         employeeName: r.parsed.employeeName,
@@ -178,6 +179,7 @@ export async function GET(req: NextRequest) {
       if (!keptIds.has(r.id)) continue;
       if (r.kind === "cancellation") continue;
       if (isLeaveCancelled(r, cancelled)) continue;
+      if (isWithdrawn(r)) continue;
       entries.push({
         id: r.id,
         employeeName: r.employeeName,

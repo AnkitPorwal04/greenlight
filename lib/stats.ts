@@ -28,7 +28,6 @@ export interface StatsMonth {
 export interface StatsEmployeeOutcomes {
   approved: number;
   rejected: number;
-  withdrawn: number;
   handled: number;
   pending: number;
 }
@@ -62,7 +61,6 @@ export interface StatsOutcomes {
   applied: number;
   approved: number;
   rejected: number;
-  withdrawn: number;
   handled: number;
   pending: number;
 }
@@ -173,6 +171,10 @@ function entryMonthKeys(entry: StatsEntry): string[] {
   return [...new Set(days.map(monthOfYmd))];
 }
 
+export function isWithdrawn(entry: Pick<StatsEntry, "status">): boolean {
+  return entry.status === "withdrawn";
+}
+
 export function buildStatsMonths(
   entries: StatsEntry[],
   now: Date = new Date()
@@ -181,6 +183,7 @@ export function buildStatsMonths(
   if (!Number.isNaN(now.getTime())) counts.set(monthKey(now), 0);
 
   for (const entry of entries) {
+    if (isWithdrawn(entry)) continue;
     for (const key of entryMonthKeys(entry)) {
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
@@ -265,12 +268,13 @@ function receivedTime(value: string): number {
 }
 
 function outcomeOf(status: LeaveStatus | undefined): StatsOutcome {
-  return status === "approved" ||
-    status === "rejected" ||
-    status === "withdrawn" ||
-    status === "handled"
+  return status === "approved" || status === "rejected" || status === "handled"
     ? status
     : "pending";
+}
+
+function byDaysThenRequests(a: StatsEmployee, b: StatsEmployee): number {
+  return b.days - a.days || b.requests - a.requests;
 }
 
 export function aggregateStatsForTeam(
@@ -283,7 +287,7 @@ export function aggregateStatsForTeam(
 export function aggregateStats(entries: StatsEntry[]): StatsPayload {
   const unique = new Map<string, StatsEntry>();
   for (const entry of entries) {
-    if (!entry.id || unique.has(entry.id)) continue;
+    if (!entry.id || unique.has(entry.id) || isWithdrawn(entry)) continue;
     unique.set(entry.id, entry);
   }
 
@@ -294,7 +298,6 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
     applied: 0,
     approved: 0,
     rejected: 0,
-    withdrawn: 0,
     handled: 0,
     pending: 0,
   };
@@ -307,26 +310,23 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
     const validDate = !Number.isNaN(received.getTime());
 
     const outcome = outcomeOf(entry.status);
-    const counted = outcome !== "withdrawn";
 
     outcomes[outcome] += 1;
-    if (counted) outcomes.applied += 1;
+    outcomes.applied += 1;
 
     if (validDate) earliest = Math.min(earliest, received.getTime());
 
-    if (counted) {
-      for (const key of entryMonthKeys(entry)) {
-        let slot = months.get(key);
-        if (!slot) {
-          slot = {
-            label: key,
-            month: { month: statsMonthShortLabel(key), total: 0, byType: {} },
-          };
-          months.set(key, slot);
-        }
-        slot.month.total += 1;
-        bump(slot.month.byType, type, 1);
+    for (const key of entryMonthKeys(entry)) {
+      let slot = months.get(key);
+      if (!slot) {
+        slot = {
+          label: key,
+          month: { month: statsMonthShortLabel(key), total: 0, byType: {} },
+        };
+        months.set(key, slot);
       }
+      slot.month.total += 1;
+      bump(slot.month.byType, type, 1);
     }
 
     const code = entry.employeeCode.trim().toUpperCase();
@@ -343,7 +343,6 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
           outcomes: {
             approved: 0,
             rejected: 0,
-            withdrawn: 0,
             handled: 0,
             pending: 0,
           },
@@ -352,11 +351,9 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
         employees.set(employeeKey, person);
       }
       person.outcomes[outcome] += 1;
-      if (counted) {
-        person.requests += 1;
-        person.days += days;
-        bump(person.byType, type, 1);
-      }
+      person.requests += 1;
+      person.days += days;
+      bump(person.byType, type, 1);
       person.entries.push({
         receivedAt: entry.receivedAt,
         leaveType: type,
@@ -365,15 +362,13 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
       });
     }
 
-    if (counted) {
-      let typeRow = types.get(type);
-      if (!typeRow) {
-        typeRow = { type, requests: 0, days: 0 };
-        types.set(type, typeRow);
-      }
-      typeRow.requests += 1;
-      typeRow.days += days;
+    let typeRow = types.get(type);
+    if (!typeRow) {
+      typeRow = { type, requests: 0, days: 0 };
+      types.set(type, typeRow);
     }
+    typeRow.requests += 1;
+    typeRow.days += days;
   }
 
   const byMonth = [...months.values()]
@@ -388,7 +383,7 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
         (a, b) => receivedTime(b.receivedAt) - receivedTime(a.receivedAt)
       ),
     }))
-    .sort((a, b) => b.days - a.days || b.requests - a.requests);
+    .sort(byDaysThenRequests);
 
   const byType = [...types.values()]
     .map((row) => ({ ...row, days: round(row.days) }))
