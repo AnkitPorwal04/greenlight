@@ -1,5 +1,5 @@
 import type { LeaveStatus } from "./types";
-import { filterByTeam } from "./team";
+import { filterByTeam, teamCode } from "./team";
 import {
   addDaysYmd,
   isValidYmd,
@@ -71,6 +71,11 @@ export interface StatsMonthTab {
   count: number;
 }
 
+export interface StatsRosterMember {
+  code: string;
+  name: string;
+}
+
 export interface StatsPayload {
   totalRequests: number;
   sinceDate: string;
@@ -79,6 +84,7 @@ export interface StatsPayload {
   byEmployee: StatsEmployee[];
   byType: StatsType[];
   entries: StatsEntry[];
+  roster?: StatsRosterMember[];
 }
 
 const FALLBACK_TYPE = "Unspecified";
@@ -275,6 +281,57 @@ function outcomeOf(status: LeaveStatus | undefined): StatsOutcome {
 
 function byDaysThenRequests(a: StatsEmployee, b: StatsEmployee): number {
   return b.days - a.days || b.requests - a.requests;
+}
+
+function groupingKey(code: string, name: string): string {
+  return code.trim().toUpperCase() || name.trim().toLowerCase();
+}
+
+export function teamRoster(
+  team: string[],
+  directory: Record<string, { name?: string }> = {}
+): StatsRosterMember[] {
+  const members: StatsRosterMember[] = [];
+  const seen = new Set<string>();
+
+  for (const raw of Array.isArray(team) ? team : []) {
+    const code = teamCode(raw);
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    members.push({ code, name: directory[code]?.name?.trim() || code });
+  }
+
+  return members;
+}
+
+export function fillTeamRoster(
+  byEmployee: StatsEmployee[],
+  roster: StatsRosterMember[] | undefined
+): StatsEmployee[] {
+  if (!roster?.length) return byEmployee;
+
+  const taken = new Set(
+    byEmployee.map((person) => groupingKey(person.code, person.name))
+  );
+
+  const filled = [...byEmployee];
+  for (const member of roster) {
+    const code = teamCode(member.code);
+    const key = groupingKey(code, member.name);
+    if (!key || taken.has(key)) continue;
+    taken.add(key);
+    filled.push({
+      code: code || "—",
+      name: member.name.trim() || code || "Unknown",
+      requests: 0,
+      days: 0,
+      byType: {},
+      outcomes: { approved: 0, rejected: 0, handled: 0, pending: 0 },
+      entries: [],
+    });
+  }
+
+  return filled.sort(byDaysThenRequests);
 }
 
 export function aggregateStatsForTeam(

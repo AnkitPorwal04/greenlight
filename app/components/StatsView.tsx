@@ -5,6 +5,7 @@ import {
   aggregateStats,
   buildStatsMonths,
   entriesInMonth,
+  fillTeamRoster,
   statsMonthKey,
   statsMonthLabel,
   statsMonthShortLabel,
@@ -266,12 +267,16 @@ function Skeleton() {
 function TopTakers({ data }: { data: StatsPayload }) {
   const uid = useId();
   const [open, setOpen] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const typeIndex = useMemo(
     () => new Map(data.byType.map((t, i) => [t.type, i] as const)),
     [data]
   );
 
-  const people = data.byEmployee.slice(0, TOP_PEOPLE);
+  const people = showAll
+    ? data.byEmployee
+    : data.byEmployee.slice(0, TOP_PEOPLE);
+  const hidden = data.byEmployee.length - TOP_PEOPLE;
   if (people.length === 0) return null;
   const max = people.reduce((peak, p) => Math.max(peak, p.days), 0);
 
@@ -358,6 +363,30 @@ function TopTakers({ data }: { data: StatsPayload }) {
           );
         })}
       </ol>
+
+      {hidden > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowAll(!showAll)}
+          aria-expanded={showAll}
+          className="press mt-4 inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-wide text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+        >
+          <span
+            aria-hidden="true"
+            className={`lamp-dot h-[5px] w-[5px] shrink-0 ${
+              showAll ? "" : "lamp-hollow"
+            }`}
+          />
+          {showAll ? (
+            "Show less"
+          ) : (
+            <>
+              Show all
+              <span className="tabular-nums">{data.byEmployee.length}</span>
+            </>
+          )}
+        </button>
+      )}
     </section>
   );
 }
@@ -631,10 +660,13 @@ function MonthScopedStats({
   const activeKey =
     picked && months.some((m) => m.key === picked) ? picked : fallbackKey;
 
-  const monthData = useMemo(
-    () => aggregateStats(entriesInMonth(data.entries, activeKey)),
-    [data, activeKey]
-  );
+  const monthData = useMemo(() => {
+    const scoped = aggregateStats(entriesInMonth(data.entries, activeKey));
+    return {
+      ...scoped,
+      byEmployee: fillTeamRoster(scoped.byEmployee, data.roster),
+    };
+  }, [data, activeKey]);
 
   return (
     <div className={loading ? "opacity-60 transition-opacity" : ""}>
