@@ -265,15 +265,42 @@ describe("a person's days per outcome", () => {
   });
 
   it("keeps half days instead of rounding them to whole days", () => {
-    const person = aggregateStats([
+    const { byEmployee } = aggregateStats([
       entry({ id: "a", numberOfDays: 0.5, status: "approved" }),
       entry({ id: "b", numberOfDays: 2, status: "approved" }),
-    ]).byEmployee[0];
+      entry({
+        id: "c",
+        employeeCode: "E202",
+        employeeName: "Dev Iyer",
+        numberOfDays: 0.1,
+        status: "approved",
+      }),
+      entry({
+        id: "d",
+        employeeCode: "E202",
+        employeeName: "Dev Iyer",
+        numberOfDays: 2.2,
+        status: "approved",
+      }),
+      entry({
+        id: "e",
+        employeeCode: "E202",
+        employeeName: "Dev Iyer",
+        numberOfDays: 0.2,
+        status: "approved",
+      }),
+    ]);
 
-    expect(person.daysByOutcome.approved).toBe(2.5);
-    expect(person.daysByOutcome.approved).not.toBe(2);
-    expect(person.daysByOutcome.approved).not.toBe(3);
-    expect(sumOf(person.daysByOutcome)).toBe(person.days);
+    const asha = byEmployee.find((p) => p.code === "E101")!;
+    expect(asha.daysByOutcome.approved).toBe(2.5);
+    expect(asha.daysByOutcome.approved).not.toBe(2);
+    expect(asha.daysByOutcome.approved).not.toBe(3);
+    expect(sumOf(asha.daysByOutcome)).toBe(asha.days);
+
+    const dev = byEmployee.find((p) => p.code === "E202")!;
+    expect(0.1 + 2.2 + 0.2).not.toBe(2.5);
+    expect(dev.daysByOutcome.approved).toBe(2.5);
+    expect(sumOf(dev.daysByOutcome)).toBe(dev.days);
   });
 
   it("never shows floating point dust for an outcome", () => {
