@@ -868,6 +868,27 @@ describe("fillTeamRoster", () => {
     ]);
   });
 
+  it("ranks by days even when the rows arrive out of order", () => {
+    const quiet = {
+      code: "GRP1042",
+      name: "Asha Rao",
+      requests: 1,
+      days: 1,
+      byType: {},
+      outcomes: { approved: 1, rejected: 0, handled: 0, pending: 0 },
+      entries: [],
+    };
+    const busy = { ...quiet, code: "GRP2001", name: "Vikram Singh", days: 4 };
+
+    const filled = fillTeamRoster([quiet, busy], roster);
+
+    expect(filled.map((p) => [p.code, p.days])).toEqual([
+      ["GRP2001", 4],
+      ["GRP1042", 1],
+      ["GRP3003", 0],
+    ]);
+  });
+
   it("puts the whole team on at zero when nobody took leave", () => {
     const filled = fillTeamRoster([], roster);
 
