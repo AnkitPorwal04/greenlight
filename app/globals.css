@@ -16,6 +16,7 @@
   --accent-on: #05170d;
   --accent-soft: rgba(35, 189, 91, 0.14);
   --accent-ring: rgba(35, 189, 91, 0.5);
+  --chart-fill: rgba(35, 189, 91, 0.4);
   --signal-green: #26bd5d;
   --signal-amber: #f5a524;
   --signal-red: #f2555a;
@@ -68,6 +69,7 @@ html.light {
   --accent-on: #ffffff;
   --accent-soft: rgba(21, 128, 61, 0.1);
   --accent-ring: rgba(21, 128, 61, 0.45);
+  --chart-fill: rgba(21, 128, 61, 0.16);
   --signal-green: #15803d;
   --signal-amber: #b45309;
   --signal-red: #be123c;
