@@ -98,18 +98,14 @@ function typeName(value: string): string {
   return trimmed || FALLBACK_TYPE;
 }
 
-// Bucket months in UTC so a request always lands in the same month regardless
-// of the server's timezone, and so the client-side member lookup (which only
-// has the ISO string) can reproduce the exact same bucket.
 function monthKey(d: Date): string {
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function monthLabel(d: Date): string {
   return d.toLocaleDateString("en-GB", {
     month: "short",
     year: "numeric",
-    timeZone: "UTC",
   });
 }
 
@@ -117,7 +113,7 @@ function monthFromKey(key: string): Date | null {
   const [year, month] = key.split("-").map(Number);
   if (!Number.isFinite(year) || !Number.isFinite(month)) return null;
   if (month < 1 || month > 12) return null;
-  return new Date(Date.UTC(year, month - 1, 1));
+  return new Date(year, month - 1, 1);
 }
 
 export function statsMonthKey(receivedAt: string): string {
@@ -137,7 +133,6 @@ export function statsMonthLabel(key: string): string {
   return d.toLocaleDateString("en-GB", {
     month: "long",
     year: "numeric",
-    timeZone: "UTC",
   });
 }
 

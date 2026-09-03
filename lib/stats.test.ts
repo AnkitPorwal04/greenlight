@@ -15,6 +15,7 @@ import {
   topDaysByType,
   type StatsEntry,
 } from "./stats";
+import { monthKey as historyMonthKey } from "./history";
 
 function sumOf(bucket: Record<string, number>): number {
   return Object.values(bucket).reduce((total, value) => total + value, 0);
@@ -601,26 +602,31 @@ describe("withdrawn requests", () => {
 });
 
 describe("month bucketing", () => {
-  it("buckets by UTC month regardless of the local timezone", () => {
-    // 23:30 UTC on the last day of August is already September in any positive
-    // offset (e.g. IST). Bucketing must stay in August so it matches the
-    // client-side member lookup, which only has the ISO string to work from.
-    const stats = aggregateStats([
-      entry({ id: "a", receivedAt: "2026-08-31T23:30:00.000Z" }),
-    ]);
+  it("buckets a late-evening UTC timestamp into the local month it reads as", () => {
+    const months = buildStatsMonths(
+      [entry({ id: "a", receivedAt: "2026-08-31T23:30:00.000Z" })],
+      new Date("2026-09-15T10:00:00.000Z")
+    );
 
-    expect(stats.byMonth).toHaveLength(1);
-    expect(stats.byMonth[0].month).toBe("Aug 2026");
+    expect(months).toEqual([
+      { key: "2026-09", label: "September 2026", count: 1 },
+    ]);
+  });
+
+  it("agrees with the History tab about the month a boundary mail belongs to", () => {
+    const boundary = "2026-08-31T23:30:00.000Z";
+
+    expect(statsMonthKey(boundary)).toBe(historyMonthKey(new Date(boundary)));
   });
 });
 
 describe("statsMonthKey", () => {
-  it("buckets an ISO string into its UTC month", () => {
+  it("buckets an ISO string into its local month", () => {
     expect(statsMonthKey("2026-09-15T10:00:00.000Z")).toBe("2026-09");
   });
 
-  it("keeps a late-evening UTC timestamp in the month it belongs to", () => {
-    expect(statsMonthKey("2026-08-31T23:30:00.000Z")).toBe("2026-08");
+  it("rolls a late-evening UTC timestamp into the month it reads as locally", () => {
+    expect(statsMonthKey("2026-08-31T23:30:00.000Z")).toBe("2026-09");
   });
 
   it("pads single digit months", () => {
