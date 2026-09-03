@@ -845,13 +845,18 @@ function MonthScopedStats({
   const activeKey =
     picked && months.some((m) => m.key === picked) ? picked : fallbackKey;
 
-  const monthData = useMemo(() => {
-    const scoped = aggregateStats(entriesInMonth(data.entries, activeKey));
-    return {
+  const scoped = useMemo(
+    () => aggregateStats(entriesInMonth(data.entries, activeKey)),
+    [data, activeKey]
+  );
+
+  const monthData = useMemo(
+    () => ({
       ...scoped,
       byEmployee: fillTeamRoster(scoped.byEmployee, data.roster),
-    };
-  }, [data, activeKey]);
+    }),
+    [scoped, data.roster]
+  );
 
   const dailyPoints = useMemo(
     () => dailyLeaveCounts(data.entries, activeKey),
@@ -882,7 +887,7 @@ function MonthScopedStats({
             monthLabel={statsMonthLabel(activeKey)}
           />
           <Overview
-            data={monthData}
+            data={scoped}
             monthLabel={statsMonthShortLabel(activeKey)}
           />
           <TopTakers data={monthData} />
