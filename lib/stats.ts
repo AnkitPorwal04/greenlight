@@ -19,12 +19,6 @@ export interface StatsEntry {
   status?: LeaveStatus;
 }
 
-export interface StatsMonth {
-  month: string;
-  total: number;
-  byType: Record<string, number>;
-}
-
 export type StatsEmployeeDays = {
   approved: number;
   rejected: number;
@@ -80,7 +74,6 @@ export interface StatsPayload {
   totalRequests: number;
   sinceDate: string;
   outcomes: StatsOutcomes;
-  byMonth: StatsMonth[];
   byEmployee: StatsEmployee[];
   byType: StatsType[];
   entries: StatsEntry[];
@@ -447,7 +440,6 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
     unique.set(entry.id, entry);
   }
 
-  const months = new Map<string, { label: string; month: StatsMonth }>();
   const employees = new Map<string, StatsEmployee>();
   const types = new Map<string, StatsType>();
   const outcomes: StatsOutcomes = {
@@ -471,19 +463,6 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
     outcomes.applied += 1;
 
     if (validDate) earliest = Math.min(earliest, received.getTime());
-
-    for (const key of entryMonthKeys(entry)) {
-      let slot = months.get(key);
-      if (!slot) {
-        slot = {
-          label: key,
-          month: { month: statsMonthShortLabel(key), total: 0, byType: {} },
-        };
-        months.set(key, slot);
-      }
-      slot.month.total += 1;
-      bump(slot.month.byType, type, 1);
-    }
 
     const code = entry.employeeCode.trim().toUpperCase();
     const employeeKey = code || entry.employeeName.trim().toLowerCase();
@@ -527,10 +506,6 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
     typeRow.days += days;
   }
 
-  const byMonth = [...months.values()]
-    .sort((a, b) => a.label.localeCompare(b.label))
-    .map((slot) => slot.month);
-
   const byEmployee = [...employees.values()]
     .map((person) => ({
       ...person,
@@ -553,7 +528,6 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
       ? new Date(earliest).toISOString()
       : "",
     outcomes,
-    byMonth,
     byEmployee,
     byType,
     entries: [...unique.values()],

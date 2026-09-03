@@ -515,7 +515,7 @@ describe("withdrawn requests", () => {
     status: "withdrawn",
   });
 
-  it("stays out of the app-wide totals, chart and type grid", () => {
+  it("stays out of the app-wide totals and type grid", () => {
     const stats = aggregateStats([kept, pulled]);
 
     expect(stats.outcomes).toEqual({
@@ -525,9 +525,6 @@ describe("withdrawn requests", () => {
       handled: 0,
       pending: 0,
     });
-    expect(stats.byMonth).toHaveLength(1);
-    expect(stats.byMonth[0].total).toBe(1);
-    expect(stats.byMonth[0].byType).toEqual({ "Casual Leave": 1 });
     expect(stats.byType).toEqual([
       { type: "Casual Leave", requests: 1, days: 2 },
     ]);
@@ -593,7 +590,6 @@ describe("withdrawn requests", () => {
 
     expect(stats.outcomes.applied).toBe(0);
     expect(stats.totalRequests).toBe(0);
-    expect(stats.byMonth).toEqual([]);
     expect(stats.byType).toEqual([]);
     expect(stats.byEmployee).toEqual([]);
     expect(stats.entries).toEqual([]);
@@ -830,12 +826,6 @@ describe("months follow the leave dates, not the mail arrival", () => {
     expect(months).toEqual([
       { key: "2026-09", label: "September 2026", count: 1 },
     ]);
-  });
-
-  it("buckets the monthly chart by the leave dates too", () => {
-    const stats = aggregateStats([acceptedLate]);
-    expect(stats.byMonth).toHaveLength(1);
-    expect(stats.byMonth[0].month).toBe("Sept 2026");
   });
 });
 
@@ -1117,8 +1107,6 @@ describe("payload entries", () => {
       "Casual Leave",
       "Sick Leave",
     ]);
-    expect(september.byMonth).toHaveLength(1);
-    expect(september.byMonth[0].month).toBe("Sept 2026");
   });
 });
 
@@ -1148,9 +1136,6 @@ describe("aggregateStatsForTeam", () => {
     expect(stats.totalRequests).toBe(1);
     expect(stats.byEmployee.map((p) => p.code)).toEqual(["GRP1042"]);
     expect(stats.byType.map((t) => t.type)).toEqual(["Casual Leave"]);
-    expect(stats.byMonth).toHaveLength(1);
-    expect(stats.byMonth[0].total).toBe(1);
-    expect(stats.byMonth[0].byType).toEqual({ "Casual Leave": 1 });
     expect(stats.outcomes).toEqual({
       applied: 1,
       approved: 1,
