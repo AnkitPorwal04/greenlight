@@ -757,18 +757,18 @@ function DailyPattern({
                 >
                   <stop
                     offset="0%"
-                    stopColor="var(--accent-soft)"
+                    stopColor="var(--chart-fill)"
                     stopOpacity="1"
                   />
                   <stop
                     offset="60%"
-                    stopColor="var(--accent-soft)"
-                    stopOpacity="0.45"
+                    stopColor="var(--chart-fill)"
+                    stopOpacity="0.5"
                   />
                   <stop
                     offset="100%"
-                    stopColor="var(--accent-soft)"
-                    stopOpacity="0"
+                    stopColor="var(--chart-fill)"
+                    stopOpacity="0.08"
                   />
                 </linearGradient>
               </defs>
