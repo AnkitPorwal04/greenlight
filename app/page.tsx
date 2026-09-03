@@ -44,6 +44,11 @@ import {
   HISTORY_MAX_MESSAGES,
   LEAVES_MAX_MESSAGES,
 } from "@/lib/gmail-window";
+import {
+  authNotice,
+  authParamFromSearch,
+  searchWithoutAuthParam,
+} from "@/lib/auth-notice";
 import { recordedToast, type RecordedStatus } from "@/lib/outcome";
 import type { StatsPayload } from "@/lib/stats";
 import type { LeaveRequest } from "@/lib/types";
@@ -222,16 +227,27 @@ export default function Home() {
 
   useEffect(() => {
     let cancelled = false;
+    const notice = authNotice(authParamFromSearch(window.location.search));
+    if (notice) {
+      const { pathname, search } = window.location;
+      window.history.replaceState(
+        null,
+        "",
+        `${pathname}${searchWithoutAuthParam(search)}`
+      );
+    }
+    const settle = (data: AuthState) => {
+      if (cancelled) return;
+      setAuth(data);
+      if (notice) setToast(notice);
+    };
     fetch("/api/auth/status")
       .then((res) => res.json())
       .then((data: AuthState) => {
-        if (cancelled) return;
-        setAuth(data);
-        if (data.connected) return loadRequests();
+        settle(data);
+        if (!cancelled && data.connected) return loadRequests();
       })
-      .catch(() => {
-        if (!cancelled) setAuth({ connected: false });
-      });
+      .catch(() => settle({ connected: false }));
     return () => {
       cancelled = true;
     };

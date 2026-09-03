@@ -6,6 +6,7 @@ import {
   oauthStateMatches,
   readOAuthStateCookie,
 } from "@/lib/oauth-state";
+import { isEmailAllowed } from "@/lib/oauth-allowlist";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,9 @@ export async function GET(req: NextRequest) {
     const email = profile.data.emailAddress;
     if (!email) {
       return redirectAndForgetState(req, "/?auth=error");
+    }
+    if (!isEmailAllowed(email, process.env.ALLOWED_EMAILS)) {
+      return redirectAndForgetState(req, "/?auth=forbidden");
     }
 
     await saveTokens(email, tokens);
