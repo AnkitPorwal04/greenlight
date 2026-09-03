@@ -19,12 +19,6 @@ export interface StatsEntry {
   status?: LeaveStatus;
 }
 
-export interface StatsMonth {
-  month: string;
-  total: number;
-  byType: Record<string, number>;
-}
-
 export type StatsEmployeeDays = {
   approved: number;
   rejected: number;
@@ -80,7 +74,6 @@ export interface StatsPayload {
   totalRequests: number;
   sinceDate: string;
   outcomes: StatsOutcomes;
-  byMonth: StatsMonth[];
   byEmployee: StatsEmployee[];
   byType: StatsType[];
   entries: StatsEntry[];
@@ -88,6 +81,7 @@ export interface StatsPayload {
 }
 
 const FALLBACK_TYPE = "Unspecified";
+const NO_CODE = "—";
 
 function safeDays(value: number): number {
   return Number.isFinite(value) && value > 0 ? value : 0;
@@ -98,18 +92,14 @@ function typeName(value: string): string {
   return trimmed || FALLBACK_TYPE;
 }
 
-// Bucket months in UTC so a request always lands in the same month regardless
-// of the server's timezone, and so the client-side member lookup (which only
-// has the ISO string) can reproduce the exact same bucket.
 function monthKey(d: Date): string {
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function monthLabel(d: Date): string {
   return d.toLocaleDateString("en-GB", {
     month: "short",
     year: "numeric",
-    timeZone: "UTC",
   });
 }
 
@@ -117,7 +107,7 @@ function monthFromKey(key: string): Date | null {
   const [year, month] = key.split("-").map(Number);
   if (!Number.isFinite(year) || !Number.isFinite(month)) return null;
   if (month < 1 || month > 12) return null;
-  return new Date(Date.UTC(year, month - 1, 1));
+  return new Date(year, month - 1, 1);
 }
 
 export function statsMonthKey(receivedAt: string): string {
@@ -137,7 +127,6 @@ export function statsMonthLabel(key: string): string {
   return d.toLocaleDateString("en-GB", {
     month: "long",
     year: "numeric",
-    timeZone: "UTC",
   });
 }
 
@@ -201,9 +190,7 @@ export function buildStatsMonths(
 }
 
 function statsEmployeeKey(entry: StatsEntry): string {
-  const code = entry.employeeCode.trim().toUpperCase();
-  const name = entry.employeeName.trim().toLowerCase();
-  return code || name || `#${entry.id}`;
+  return groupingKey(entry.employeeCode, entry.employeeName) || `#${entry.id}`;
 }
 
 function arrivedLater(candidate: StatsEntry, current: StatsEntry): boolean {
@@ -373,6 +360,12 @@ function groupingKey(code: string, name: string): string {
   return code.trim().toUpperCase() || name.trim().toLowerCase();
 }
 
+export function statsIdentity(
+  person: Pick<StatsEmployee, "code" | "name">
+): string {
+  return groupingKey(person.code === NO_CODE ? "" : person.code, person.name);
+}
+
 export interface StatsTypeDays {
   type: string;
   days: number;
@@ -414,9 +407,7 @@ export function fillTeamRoster(
 ): StatsEmployee[] {
   if (!roster?.length) return byEmployee;
 
-  const taken = new Set(
-    byEmployee.map((person) => groupingKey(person.code, person.name))
-  );
+  const taken = new Set(byEmployee.map(statsIdentity));
 
   const filled = [...byEmployee];
   for (const member of roster) {
@@ -425,7 +416,7 @@ export function fillTeamRoster(
     if (!key || taken.has(key)) continue;
     taken.add(key);
     filled.push({
-      code: code || "—",
+      code: code || NO_CODE,
       name: member.name.trim() || code || "Unknown",
       requests: 0,
       days: 0,
@@ -452,7 +443,6 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
     unique.set(entry.id, entry);
   }
 
-  const months = new Map<string, { label: string; month: StatsMonth }>();
   const employees = new Map<string, StatsEmployee>();
   const types = new Map<string, StatsType>();
   const outcomes: StatsOutcomes = {
@@ -477,26 +467,12 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
 
     if (validDate) earliest = Math.min(earliest, received.getTime());
 
-    for (const key of entryMonthKeys(entry)) {
-      let slot = months.get(key);
-      if (!slot) {
-        slot = {
-          label: key,
-          month: { month: statsMonthShortLabel(key), total: 0, byType: {} },
-        };
-        months.set(key, slot);
-      }
-      slot.month.total += 1;
-      bump(slot.month.byType, type, 1);
-    }
-
-    const code = entry.employeeCode.trim().toUpperCase();
-    const employeeKey = code || entry.employeeName.trim().toLowerCase();
+    const employeeKey = groupingKey(entry.employeeCode, entry.employeeName);
     if (employeeKey) {
       let person = employees.get(employeeKey);
       if (!person) {
         person = {
-          code: code || "—",
+          code: entry.employeeCode.trim().toUpperCase() || NO_CODE,
           name: entry.employeeName.trim() || "Unknown",
           requests: 0,
           days: 0,
@@ -532,10 +508,6 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
     typeRow.days += days;
   }
 
-  const byMonth = [...months.values()]
-    .sort((a, b) => a.label.localeCompare(b.label))
-    .map((slot) => slot.month);
-
   const byEmployee = [...employees.values()]
     .map((person) => ({
       ...person,
@@ -558,7 +530,6 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
       ? new Date(earliest).toISOString()
       : "",
     outcomes,
-    byMonth,
     byEmployee,
     byType,
     entries: [...unique.values()],

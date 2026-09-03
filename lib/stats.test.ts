@@ -8,6 +8,7 @@ import {
   narrowDayLabels,
   entriesInMonth,
   fillTeamRoster,
+  statsIdentity,
   statsMonthKey,
   statsMonthLabel,
   statsMonthShortLabel,
@@ -15,6 +16,7 @@ import {
   topDaysByType,
   type StatsEntry,
 } from "./stats";
+import { monthKey as historyMonthKey } from "./history";
 
 function sumOf(bucket: Record<string, number>): number {
   return Object.values(bucket).reduce((total, value) => total + value, 0);
@@ -514,7 +516,7 @@ describe("withdrawn requests", () => {
     status: "withdrawn",
   });
 
-  it("stays out of the app-wide totals, chart and type grid", () => {
+  it("stays out of the app-wide totals and type grid", () => {
     const stats = aggregateStats([kept, pulled]);
 
     expect(stats.outcomes).toEqual({
@@ -524,9 +526,6 @@ describe("withdrawn requests", () => {
       handled: 0,
       pending: 0,
     });
-    expect(stats.byMonth).toHaveLength(1);
-    expect(stats.byMonth[0].total).toBe(1);
-    expect(stats.byMonth[0].byType).toEqual({ "Casual Leave": 1 });
     expect(stats.byType).toEqual([
       { type: "Casual Leave", requests: 1, days: 2 },
     ]);
@@ -592,7 +591,6 @@ describe("withdrawn requests", () => {
 
     expect(stats.outcomes.applied).toBe(0);
     expect(stats.totalRequests).toBe(0);
-    expect(stats.byMonth).toEqual([]);
     expect(stats.byType).toEqual([]);
     expect(stats.byEmployee).toEqual([]);
     expect(stats.entries).toEqual([]);
@@ -601,26 +599,31 @@ describe("withdrawn requests", () => {
 });
 
 describe("month bucketing", () => {
-  it("buckets by UTC month regardless of the local timezone", () => {
-    // 23:30 UTC on the last day of August is already September in any positive
-    // offset (e.g. IST). Bucketing must stay in August so it matches the
-    // client-side member lookup, which only has the ISO string to work from.
-    const stats = aggregateStats([
-      entry({ id: "a", receivedAt: "2026-08-31T23:30:00.000Z" }),
-    ]);
+  it("buckets a late-evening UTC timestamp into the local month it reads as", () => {
+    const months = buildStatsMonths(
+      [entry({ id: "a", receivedAt: "2026-08-31T23:30:00.000Z" })],
+      new Date("2026-09-15T10:00:00.000Z")
+    );
 
-    expect(stats.byMonth).toHaveLength(1);
-    expect(stats.byMonth[0].month).toBe("Aug 2026");
+    expect(months).toEqual([
+      { key: "2026-09", label: "September 2026", count: 1 },
+    ]);
+  });
+
+  it("agrees with the History tab about the month a boundary mail belongs to", () => {
+    const boundary = "2026-08-31T23:30:00.000Z";
+
+    expect(statsMonthKey(boundary)).toBe(historyMonthKey(new Date(boundary)));
   });
 });
 
 describe("statsMonthKey", () => {
-  it("buckets an ISO string into its UTC month", () => {
+  it("buckets an ISO string into its local month", () => {
     expect(statsMonthKey("2026-09-15T10:00:00.000Z")).toBe("2026-09");
   });
 
-  it("keeps a late-evening UTC timestamp in the month it belongs to", () => {
-    expect(statsMonthKey("2026-08-31T23:30:00.000Z")).toBe("2026-08");
+  it("rolls a late-evening UTC timestamp into the month it reads as locally", () => {
+    expect(statsMonthKey("2026-08-31T23:30:00.000Z")).toBe("2026-09");
   });
 
   it("pads single digit months", () => {
@@ -649,6 +652,17 @@ describe("stats month labels", () => {
     expect(statsMonthLabel("nonsense")).toBe("nonsense");
     expect(statsMonthLabel("2026-13")).toBe("2026-13");
     expect(statsMonthShortLabel("nonsense")).toBe("nonsense");
+  });
+
+  it("names the month a tab stands for even behind UTC", () => {
+    const original = process.env.TZ;
+    process.env.TZ = "America/New_York";
+    try {
+      expect(statsMonthLabel("2026-09")).toBe("September 2026");
+      expect(statsMonthShortLabel("2026-09")).toBe("Sept 2026");
+    } finally {
+      process.env.TZ = original;
+    }
   });
 });
 
@@ -824,12 +838,6 @@ describe("months follow the leave dates, not the mail arrival", () => {
     expect(months).toEqual([
       { key: "2026-09", label: "September 2026", count: 1 },
     ]);
-  });
-
-  it("buckets the monthly chart by the leave dates too", () => {
-    const stats = aggregateStats([acceptedLate]);
-    expect(stats.byMonth).toHaveLength(1);
-    expect(stats.byMonth[0].month).toBe("Sept 2026");
   });
 });
 
@@ -1111,8 +1119,6 @@ describe("payload entries", () => {
       "Casual Leave",
       "Sick Leave",
     ]);
-    expect(september.byMonth).toHaveLength(1);
-    expect(september.byMonth[0].month).toBe("Sept 2026");
   });
 });
 
@@ -1142,9 +1148,6 @@ describe("aggregateStatsForTeam", () => {
     expect(stats.totalRequests).toBe(1);
     expect(stats.byEmployee.map((p) => p.code)).toEqual(["GRP1042"]);
     expect(stats.byType.map((t) => t.type)).toEqual(["Casual Leave"]);
-    expect(stats.byMonth).toHaveLength(1);
-    expect(stats.byMonth[0].total).toBe(1);
-    expect(stats.byMonth[0].byType).toEqual({ "Casual Leave": 1 });
     expect(stats.outcomes).toEqual({
       applied: 1,
       approved: 1,
@@ -1687,5 +1690,84 @@ describe("dailyLeaveCounts", () => {
     expect(dailyLeaveCounts(entries, "2026-9")).toEqual([]);
     expect(dailyLeaveCounts(entries, "2026-09-01")).toEqual([]);
     expect(dailyLeaveCounts(entries, "September")).toEqual([]);
+  });
+});
+
+describe("statsIdentity", () => {
+  const spelt = (id: string, name: string, ymd: string): StatsEntry =>
+    entry({
+      id,
+      employeeName: name,
+      employeeCode: "EMP42",
+      fromDate: ymd,
+      toDate: ymd,
+      receivedAt: `${ymd}T09:00:00.000Z`,
+    });
+
+  it("joins two aggregations that disagree about the display name", () => {
+    const entries = [
+      spelt("a", "Uday Pratap Singh", "2026-01-12"),
+      spelt("b", "Uday P Singh", "2026-02-09"),
+    ];
+
+    const allTime = aggregateStats(entries);
+    const february = aggregateStats(entriesInMonth(entries, "2026-02"));
+
+    expect(allTime.byEmployee[0].name).not.toBe(february.byEmployee[0].name);
+    expect(statsIdentity(allTime.byEmployee[0])).toBe(
+      statsIdentity(february.byEmployee[0])
+    );
+  });
+
+  it("finds the month row for a person picked from the all-time pool", () => {
+    const entries = [
+      spelt("a", "Uday Pratap Singh", "2026-01-12"),
+      spelt("b", "Uday P Singh", "2026-02-09"),
+    ];
+
+    const pool = aggregateStats(entries).byEmployee;
+    const monthRows = aggregateStats(
+      entriesInMonth(entries, "2026-02")
+    ).byEmployee;
+    const byKey = new Map(monthRows.map((p) => [statsIdentity(p), p] as const));
+
+    const found = byKey.get(statsIdentity(pool[0]));
+    expect(found?.days).toBe(1);
+    expect(found?.entries).toHaveLength(1);
+  });
+
+  it("reproduces the key aggregateStats grouped each row under", () => {
+    const stats = aggregateStats([
+      entry({ id: "a", employeeCode: "e101", employeeName: "Asha Rao" }),
+      entry({ id: "b", employeeCode: "  e202 ", employeeName: "Bala Iyer" }),
+      entry({ id: "c", employeeCode: "", employeeName: "Chandra Nair" }),
+    ]);
+
+    const keys = stats.byEmployee.map(statsIdentity);
+    expect(new Set(keys).size).toBe(stats.byEmployee.length);
+    expect(keys.sort()).toEqual(["E101", "E202", "chandra nair"]);
+  });
+
+  it("keeps two employees without a code apart", () => {
+    const stats = aggregateStats([
+      entry({ id: "a", employeeCode: "", employeeName: "Asha Rao" }),
+      entry({ id: "b", employeeCode: "", employeeName: "Bala Iyer" }),
+    ]);
+
+    expect(stats.byEmployee).toHaveLength(2);
+    expect(new Set(stats.byEmployee.map(statsIdentity)).size).toBe(2);
+  });
+
+  it("stays unique across a roster-filled pool", () => {
+    const pool = fillTeamRoster(
+      aggregateStats([entry({ id: "a", employeeCode: "e101" })]).byEmployee,
+      [
+        { code: "E101", name: "Asha Rao" },
+        { code: "E777", name: "Nikhil Bose" },
+      ]
+    );
+
+    expect(pool).toHaveLength(2);
+    expect(new Set(pool.map(statsIdentity)).size).toBe(2);
   });
 });
