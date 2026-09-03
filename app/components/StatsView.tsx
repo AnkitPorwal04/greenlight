@@ -9,6 +9,7 @@ import {
   entriesInMonth,
   fillTeamRoster,
   narrowDayLabels,
+  statsIdentity,
   statsMonthKey,
   statsMonthLabel,
   statsMonthShortLabel,
@@ -66,10 +67,6 @@ function formatShortDay(iso: string) {
 
 function formatNumber(n: number) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
-}
-
-function memberKey(person: { code: string; name: string }) {
-  return `${person.code}-${person.name}`;
 }
 
 function breakdown(daysByType: Record<string, number>) {
@@ -443,7 +440,8 @@ function MemberLookup({
   );
 
   const monthByKey = useMemo(
-    () => new Map(monthData.byEmployee.map((p) => [memberKey(p), p] as const)),
+    () =>
+      new Map(monthData.byEmployee.map((p) => [statsIdentity(p), p] as const)),
     [monthData]
   );
 
@@ -461,19 +459,21 @@ function MemberLookup({
   const selected = useMemo(
     () =>
       selectedKey
-        ? (pool.find((p) => memberKey(p) === selectedKey) ?? null)
+        ? (pool.find((p) => statsIdentity(p) === selectedKey) ?? null)
         : null,
     [pool, selectedKey]
   );
 
-  const inMonth = selected ? monthByKey.get(memberKey(selected)) : undefined;
+  const inMonth = selected
+    ? monthByKey.get(statsIdentity(selected))
+    : undefined;
   const monthEntries = inMonth?.entries ?? [];
   const takenDays = inMonth?.days ?? 0;
 
   if (pool.length === 0) return null;
 
   const pick = (person: StatsEmployee) => {
-    setSelectedKey(memberKey(person));
+    setSelectedKey(statsIdentity(person));
     setQuery("");
   };
 
@@ -512,7 +512,7 @@ function MemberLookup({
         (matches.length > 0 ? (
           <ul className="mt-2 max-w-sm divide-y divide-[var(--border)] overflow-hidden rounded-md border border-[var(--border)]">
             {matches.map((person) => (
-              <li key={memberKey(person)}>
+              <li key={statsIdentity(person)}>
                 <button
                   type="button"
                   onClick={() => pick(person)}
@@ -534,7 +534,9 @@ function MemberLookup({
                     </span>
                   </span>
                   <span className="shrink-0 font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
-                    {formatNumber(monthByKey.get(memberKey(person))?.days ?? 0)}
+                    {formatNumber(
+                      monthByKey.get(statsIdentity(person))?.days ?? 0
+                    )}
                     d
                   </span>
                 </button>

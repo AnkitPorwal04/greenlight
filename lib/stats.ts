@@ -81,6 +81,7 @@ export interface StatsPayload {
 }
 
 const FALLBACK_TYPE = "Unspecified";
+const NO_CODE = "—";
 
 function safeDays(value: number): number {
   return Number.isFinite(value) && value > 0 ? value : 0;
@@ -189,9 +190,7 @@ export function buildStatsMonths(
 }
 
 function statsEmployeeKey(entry: StatsEntry): string {
-  const code = entry.employeeCode.trim().toUpperCase();
-  const name = entry.employeeName.trim().toLowerCase();
-  return code || name || `#${entry.id}`;
+  return groupingKey(entry.employeeCode, entry.employeeName) || `#${entry.id}`;
 }
 
 function arrivedLater(candidate: StatsEntry, current: StatsEntry): boolean {
@@ -361,6 +360,12 @@ function groupingKey(code: string, name: string): string {
   return code.trim().toUpperCase() || name.trim().toLowerCase();
 }
 
+export function statsIdentity(
+  person: Pick<StatsEmployee, "code" | "name">
+): string {
+  return groupingKey(person.code === NO_CODE ? "" : person.code, person.name);
+}
+
 export interface StatsTypeDays {
   type: string;
   days: number;
@@ -402,9 +407,7 @@ export function fillTeamRoster(
 ): StatsEmployee[] {
   if (!roster?.length) return byEmployee;
 
-  const taken = new Set(
-    byEmployee.map((person) => groupingKey(person.code, person.name))
-  );
+  const taken = new Set(byEmployee.map(statsIdentity));
 
   const filled = [...byEmployee];
   for (const member of roster) {
@@ -413,7 +416,7 @@ export function fillTeamRoster(
     if (!key || taken.has(key)) continue;
     taken.add(key);
     filled.push({
-      code: code || "—",
+      code: code || NO_CODE,
       name: member.name.trim() || code || "Unknown",
       requests: 0,
       days: 0,
@@ -464,13 +467,12 @@ export function aggregateStats(entries: StatsEntry[]): StatsPayload {
 
     if (validDate) earliest = Math.min(earliest, received.getTime());
 
-    const code = entry.employeeCode.trim().toUpperCase();
-    const employeeKey = code || entry.employeeName.trim().toLowerCase();
+    const employeeKey = groupingKey(entry.employeeCode, entry.employeeName);
     if (employeeKey) {
       let person = employees.get(employeeKey);
       if (!person) {
         person = {
-          code: code || "—",
+          code: entry.employeeCode.trim().toUpperCase() || NO_CODE,
           name: entry.employeeName.trim() || "Unknown",
           requests: 0,
           days: 0,

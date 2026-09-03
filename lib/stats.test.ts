@@ -8,6 +8,7 @@ import {
   narrowDayLabels,
   entriesInMonth,
   fillTeamRoster,
+  statsIdentity,
   statsMonthKey,
   statsMonthLabel,
   statsMonthShortLabel,
@@ -1678,5 +1679,84 @@ describe("dailyLeaveCounts", () => {
     expect(dailyLeaveCounts(entries, "2026-9")).toEqual([]);
     expect(dailyLeaveCounts(entries, "2026-09-01")).toEqual([]);
     expect(dailyLeaveCounts(entries, "September")).toEqual([]);
+  });
+});
+
+describe("statsIdentity", () => {
+  const spelt = (id: string, name: string, ymd: string): StatsEntry =>
+    entry({
+      id,
+      employeeName: name,
+      employeeCode: "EMP42",
+      fromDate: ymd,
+      toDate: ymd,
+      receivedAt: `${ymd}T09:00:00.000Z`,
+    });
+
+  it("joins two aggregations that disagree about the display name", () => {
+    const entries = [
+      spelt("a", "Uday Pratap Singh", "2026-01-12"),
+      spelt("b", "Uday P Singh", "2026-02-09"),
+    ];
+
+    const allTime = aggregateStats(entries);
+    const february = aggregateStats(entriesInMonth(entries, "2026-02"));
+
+    expect(allTime.byEmployee[0].name).not.toBe(february.byEmployee[0].name);
+    expect(statsIdentity(allTime.byEmployee[0])).toBe(
+      statsIdentity(february.byEmployee[0])
+    );
+  });
+
+  it("finds the month row for a person picked from the all-time pool", () => {
+    const entries = [
+      spelt("a", "Uday Pratap Singh", "2026-01-12"),
+      spelt("b", "Uday P Singh", "2026-02-09"),
+    ];
+
+    const pool = aggregateStats(entries).byEmployee;
+    const monthRows = aggregateStats(
+      entriesInMonth(entries, "2026-02")
+    ).byEmployee;
+    const byKey = new Map(monthRows.map((p) => [statsIdentity(p), p] as const));
+
+    const found = byKey.get(statsIdentity(pool[0]));
+    expect(found?.days).toBe(1);
+    expect(found?.entries).toHaveLength(1);
+  });
+
+  it("reproduces the key aggregateStats grouped each row under", () => {
+    const stats = aggregateStats([
+      entry({ id: "a", employeeCode: "e101", employeeName: "Asha Rao" }),
+      entry({ id: "b", employeeCode: "  e202 ", employeeName: "Bala Iyer" }),
+      entry({ id: "c", employeeCode: "", employeeName: "Chandra Nair" }),
+    ]);
+
+    const keys = stats.byEmployee.map(statsIdentity);
+    expect(new Set(keys).size).toBe(stats.byEmployee.length);
+    expect(keys.sort()).toEqual(["E101", "E202", "chandra nair"]);
+  });
+
+  it("keeps two employees without a code apart", () => {
+    const stats = aggregateStats([
+      entry({ id: "a", employeeCode: "", employeeName: "Asha Rao" }),
+      entry({ id: "b", employeeCode: "", employeeName: "Bala Iyer" }),
+    ]);
+
+    expect(stats.byEmployee).toHaveLength(2);
+    expect(new Set(stats.byEmployee.map(statsIdentity)).size).toBe(2);
+  });
+
+  it("stays unique across a roster-filled pool", () => {
+    const pool = fillTeamRoster(
+      aggregateStats([entry({ id: "a", employeeCode: "e101" })]).byEmployee,
+      [
+        { code: "E101", name: "Asha Rao" },
+        { code: "E777", name: "Nikhil Bose" },
+      ]
+    );
+
+    expect(pool).toHaveLength(2);
+    expect(new Set(pool.map(statsIdentity)).size).toBe(2);
   });
 });
