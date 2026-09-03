@@ -97,6 +97,7 @@ Requests match to the directory by employee code, so every reply lands at the *v
 | `UPSTASH_REDIS_REST_URL` | Production | Set by the Vercel + Upstash integration (`KV_REST_API_URL` works too) |
 | `UPSTASH_REDIS_REST_TOKEN` | Production | Same idea (`KV_REST_API_TOKEN` works too) |
 | `GOOGLE_REDIRECT_URI` | No | Override; defaults to `<request-origin>/api/auth/callback` |
+| `ALLOWED_EMAILS` | No | Comma-separated Google accounts permitted to connect a mailbox, e.g. `ankit@ethara.ai,archana@ethara.ai`. Case and spacing are ignored. Left unset or empty, any account that gets past `APP_PASSCODE` may connect |
 | `LEAVE_MAIL_QUERY` | No | A custom Gmail search, if your HR tool isn't greytHR |
 | `GEMINI_API_KEY` | No | Turns on **Direct requests** — reading leave mail people send you instead of using greytHR. Left unset, the feature stays off |
 | `GEMINI_MODEL` | No | Override; a comma-separated fallback chain tried left to right when a model is retired, rate limited, erroring or slow. Defaults to `gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemini-flash-lite-latest`. A single name still works and simply means "no fallback" |
