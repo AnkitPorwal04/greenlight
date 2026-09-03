@@ -423,68 +423,57 @@ function TopTakers({ data }: { data: StatsPayload }) {
   );
 }
 
-function MemberLookup({ data }: { data: StatsPayload }) {
+function MemberLookup({
+  data,
+  pool,
+  monthData,
+  activeKey,
+}: {
+  data: StatsPayload;
+  pool: StatsEmployee[];
+  monthData: StatsPayload;
+  activeKey: string;
+}) {
   const [query, setQuery] = useState("");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [month, setMonth] = useState<string | null>(null);
 
   const typeIndex = useMemo(
     () => new Map(data.byType.map((t, i) => [t.type, i] as const)),
     [data]
   );
 
+  const monthByKey = useMemo(
+    () => new Map(monthData.byEmployee.map((p) => [memberKey(p), p] as const)),
+    [monthData]
+  );
+
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
-    return data.byEmployee
+    return pool
       .filter(
         (p) =>
           p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)
       )
       .slice(0, 8);
-  }, [data, query]);
+  }, [pool, query]);
 
   const selected = useMemo(
     () =>
       selectedKey
-        ? (data.byEmployee.find((p) => memberKey(p) === selectedKey) ?? null)
+        ? (pool.find((p) => memberKey(p) === selectedKey) ?? null)
         : null,
-    [data, selectedKey]
+    [pool, selectedKey]
   );
 
-  // Months this member has activity in, newest first.
-  const months = useMemo(() => {
-    if (!selected) return [];
-    const seen = new Set<string>();
-    for (const e of selected.entries) {
-      const key = statsMonthKey(e.receivedAt);
-      if (key) seen.add(key);
-    }
-    return [...seen].sort((a, b) => b.localeCompare(a));
-  }, [selected]);
+  const inMonth = selected ? monthByKey.get(memberKey(selected)) : undefined;
+  const monthEntries = inMonth?.entries ?? [];
+  const takenDays = inMonth?.days ?? 0;
 
-  // Fall back to the latest month whenever the picked one isn't valid for
-  // this member (e.g. right after switching members).
-  const activeMonth =
-    month && months.includes(month) ? month : (months[0] ?? null);
-
-  const monthEntries = useMemo(
-    () =>
-      selected && activeMonth
-        ? selected.entries.filter(
-            (e) => statsMonthKey(e.receivedAt) === activeMonth
-          )
-        : [],
-    [selected, activeMonth]
-  );
-
-  const takenDays = monthEntries.reduce((sum, e) => sum + e.numberOfDays, 0);
-
-  if (data.byEmployee.length === 0) return null;
+  if (pool.length === 0) return null;
 
   const pick = (person: StatsEmployee) => {
     setSelectedKey(memberKey(person));
-    setMonth(null);
     setQuery("");
   };
 
@@ -493,8 +482,8 @@ function MemberLookup({ data }: { data: StatsPayload }) {
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
         <Label>Member lookup</Label>
         <span className="font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
-          all months · {data.byEmployee.length}{" "}
-          {data.byEmployee.length === 1 ? "member" : "members"}
+          {statsMonthLabel(activeKey)} · {pool.length}{" "}
+          {pool.length === 1 ? "member" : "members"}
         </span>
       </div>
 
@@ -545,7 +534,8 @@ function MemberLookup({ data }: { data: StatsPayload }) {
                     </span>
                   </span>
                   <span className="shrink-0 font-mono text-[11px] tabular-nums text-[var(--text-muted)]">
-                    {formatNumber(person.days)}d
+                    {formatNumber(monthByKey.get(memberKey(person))?.days ?? 0)}
+                    d
                   </span>
                 </button>
               </li>
@@ -584,29 +574,8 @@ function MemberLookup({ data }: { data: StatsPayload }) {
             </button>
           </div>
 
-          {months.length > 0 ? (
+          {monthEntries.length > 0 ? (
             <>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {months.map((key) => {
-                  const on = key === activeMonth;
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setMonth(key)}
-                      aria-pressed={on}
-                      className={`press rounded-full border px-3 py-1 font-mono text-[11px] uppercase tracking-wide transition ${
-                        on
-                          ? "border-[var(--accent-ring)] bg-[var(--accent-soft)] text-[var(--text-primary)]"
-                          : "border-[var(--border-strong)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                      }`}
-                    >
-                      {statsMonthShortLabel(key)}
-                    </button>
-                  );
-                })}
-              </div>
-
               <div className="mt-5 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-[var(--border)] pt-4">
                 <span className="font-mono text-[24px] font-medium leading-none tracking-tight tabular-nums text-[var(--text-primary)]">
                   {monthEntries.length}
@@ -635,7 +604,8 @@ function MemberLookup({ data }: { data: StatsPayload }) {
             </>
           ) : (
             <p className="mt-4 text-[12px] text-[var(--text-muted)]">
-              No leave requests recorded for this member.
+              No leave recorded for this member in{" "}
+              {statsMonthLabel(activeKey)}.
             </p>
           )}
         </div>
@@ -863,6 +833,11 @@ function MonthScopedStats({
     [data, activeKey]
   );
 
+  const pool = useMemo(
+    () => fillTeamRoster(data.byEmployee, data.roster),
+    [data]
+  );
+
   return (
     <div className={loading ? "opacity-60 transition-opacity" : ""}>
       <MonthTabs
@@ -895,7 +870,12 @@ function MonthScopedStats({
         </>
       )}
 
-      <MemberLookup data={data} />
+      <MemberLookup
+        data={data}
+        pool={pool}
+        monthData={monthData}
+        activeKey={activeKey}
+      />
     </div>
   );
 }
