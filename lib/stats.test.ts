@@ -653,6 +653,17 @@ describe("stats month labels", () => {
     expect(statsMonthLabel("2026-13")).toBe("2026-13");
     expect(statsMonthShortLabel("nonsense")).toBe("nonsense");
   });
+
+  it("names the month a tab stands for even behind UTC", () => {
+    const original = process.env.TZ;
+    process.env.TZ = "America/New_York";
+    try {
+      expect(statsMonthLabel("2026-09")).toBe("September 2026");
+      expect(statsMonthShortLabel("2026-09")).toBe("Sept 2026");
+    } finally {
+      process.env.TZ = original;
+    }
+  });
 });
 
 describe("buildStatsMonths", () => {
