@@ -3,6 +3,7 @@ import {
   headerValue,
   messageIdTokens,
   replyCoversApplication,
+  threadsWorthFetching,
   type ThreadMessage,
 } from "./thread-reply";
 
@@ -293,5 +294,62 @@ describe("replyCoversApplication", () => {
         applicationsInThread: 1,
       }),
     ).toBe(false);
+  });
+});
+
+describe("threadsWorthFetching", () => {
+  const loaded = new Set<string>();
+
+  it("keeps only pending threads the manager has sent mail into", () => {
+    expect(
+      threadsWorthFetching(
+        ["t1", "t2", "t3"],
+        new Set(["t2", "t9"]),
+        loaded,
+      ),
+    ).toEqual(["t2"]);
+  });
+
+  it("skips threads already fetched for the mail cache", () => {
+    expect(
+      threadsWorthFetching(
+        ["t1", "t2"],
+        new Set(["t1", "t2"]),
+        new Set(["t1"]),
+      ),
+    ).toEqual(["t2"]);
+  });
+
+  it("fetches nothing when the manager has replied to none of them", () => {
+    expect(threadsWorthFetching(["t1", "t2"], new Set(), loaded)).toEqual([]);
+  });
+
+  it("deduplicates repeated thread ids and drops blanks", () => {
+    expect(
+      threadsWorthFetching(
+        ["t1", "t1", undefined, "", "t1"],
+        new Set(["t1"]),
+        loaded,
+      ),
+    ).toEqual(["t1"]);
+  });
+
+  it("preserves the order the pending requests came in", () => {
+    expect(
+      threadsWorthFetching(
+        ["t3", "t1", "t2"],
+        new Set(["t1", "t2", "t3"]),
+        loaded,
+      ),
+    ).toEqual(["t3", "t1", "t2"]);
+  });
+
+  it("fetches nothing at all when there is nothing pending", () => {
+    expect(threadsWorthFetching([], new Set(["t1"]), loaded)).toEqual([]);
+  });
+
+  it("never fetches a thread outside the pending set", () => {
+    const out = threadsWorthFetching(["t1"], new Set(["t1", "t2", "t3"]), loaded);
+    expect(out).toEqual(["t1"]);
   });
 });

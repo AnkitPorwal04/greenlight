@@ -7,10 +7,17 @@ import {
   loadDecisions,
   loadMailCache,
   loadNoAuto,
+  loadSyncState,
   saveDecision,
   saveMailCache,
+  saveSyncState,
   loadTeam,
 } from "@/lib/store";
+import {
+  decideSync,
+  normalizeHistoryId,
+  syncStateToStore,
+} from "@/lib/gmail-sync";
 import {
   buildLeaveRequest,
   cacheEntryFromParsed,
@@ -20,6 +27,9 @@ import {
 import { loadEmployees } from "@/lib/employees";
 import { filterByTeam } from "@/lib/team";
 import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
+import { createLedger, type QuotaLedger } from "@/lib/quota";
+import { noteGmailFailure, readBreaker } from "@/lib/gmail-breaker";
+import { cachedIdsSince, resolveWindowRefs } from "@/lib/cached-window";
 import { fetchDirectRequests } from "@/lib/direct-fetch";
 import { dedupeLeaves } from "@/lib/dedupe";
 import { gmailAfterDate } from "@/lib/history";
@@ -30,8 +40,13 @@ import {
   GMAIL_PAGE_SIZE,
   LEAVES_MAX_MESSAGES,
   LEAVE_MAIL_QUERY,
+  SENT_MAIL_QUERY,
+  SENT_PROBE_MAX_MESSAGES,
 } from "@/lib/gmail-window";
-import { replyCoversApplication } from "@/lib/thread-reply";
+import {
+  replyCoversApplication,
+  threadsWorthFetching,
+} from "@/lib/thread-reply";
 import type { Decision, LeaveRequest } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -51,8 +66,10 @@ async function loadThreads(
   gmail: gmail_v1.Gmail,
   threadIds: string[],
   into: Map<string, gmail_v1.Schema$Thread>,
+  ledger: QuotaLedger,
 ): Promise<void> {
   for (const batch of chunk(threadIds, THREAD_BATCH_SIZE)) {
+    if (!(await ledger.afford("threads.get", batch.length))) break;
     const fetched = await Promise.all(
       batch.map((tid) =>
         gmail.users.threads.get({
@@ -88,13 +105,58 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "not_connected" }, { status: 401 });
   }
 
+  const ledger = createLedger(user);
+  const breaker = await readBreaker(user);
+  const skipGmail = breaker !== null;
+  const since = leavesWindowStart();
+  const sinceMs = since.getTime();
+
   try {
     const gmail = getGmail(client);
-    const since = leavesWindowStart();
-    const [profile, listed, decisions, employees, undone, team, mailCache] =
+    const [profile, decisions, employees, undone, team, mailCache, syncState] =
       await Promise.all([
-        gmail.users.getProfile({ userId: "me" }),
-        collectMessageRefs(LEAVES_MAX_MESSAGES, async (pageToken) => {
+        skipGmail
+          ? Promise.resolve(null)
+          : gmail.users.getProfile({ userId: "me" }).then(async (res) => {
+              await ledger.charge("getProfile");
+              return res;
+            }),
+        loadDecisions(user),
+        loadEmployees(),
+        loadNoAuto(user),
+        loadTeam(user),
+        loadMailCache(user),
+        loadSyncState(user, "leaves"),
+      ]);
+    const noAuto = new Set(undone);
+    const selfEmail = profile?.data.emailAddress ?? "";
+    const historyId = normalizeHistoryId(profile?.data.historyId);
+    const cachedIds = cachedIdsSince(
+      mailCache.entries,
+      sinceMs,
+      LEAVES_MAX_MESSAGES,
+    );
+    const nowMs = Date.now();
+
+    const sync = skipGmail
+      ? { scan: false }
+      : await decideSync(
+          syncState,
+          { historyId, sinceMs, nowMs, cachedCount: cachedIds.length },
+          async (startHistoryId) => {
+            if (!(await ledger.afford("history.list"))) return null;
+            const probed = await gmail.users.history.list({
+              userId: "me",
+              startHistoryId,
+              historyTypes: ["messageAdded"],
+            });
+            return probed.data;
+          },
+        );
+
+    const listed = sync.scan
+      ? await collectMessageRefs(LEAVES_MAX_MESSAGES, async (pageToken) => {
+          if (!(await ledger.afford("messages.list"))) return { refs: [] };
           const page = await gmail.users.messages.list({
             userId: "me",
             q: windowedQuery(LEAVE_MAIL_QUERY, since),
@@ -108,16 +170,17 @@ export async function GET(req: NextRequest) {
             })),
             nextPageToken: page.data.nextPageToken ?? undefined,
           };
-        }),
-        loadDecisions(user),
-        loadEmployees(),
-        loadNoAuto(user),
-        loadTeam(user),
-        loadMailCache(user),
-      ]);
-    const noAuto = new Set(undone);
-    const selfEmail = profile.data.emailAddress ?? "";
-    const refs = listed.refs;
+        })
+      : { refs: [], capped: false };
+
+    const refs = resolveWindowRefs({
+      scan: sync.scan,
+      degraded: ledger.exhausted,
+      listed: listed.refs,
+      cachedIds,
+      entries: mailCache.entries,
+      cap: LEAVES_MAX_MESSAGES,
+    });
 
     const wantedIds = new Set(refs.map((r) => r.id));
     const { missing } = partitionCached([...wantedIds], mailCache);
@@ -135,6 +198,7 @@ export async function GET(req: NextRequest) {
         ),
       ],
       threads,
+      ledger,
     );
 
     let cached = 0;
@@ -172,13 +236,42 @@ export async function GET(req: NextRequest) {
     const undecided = requests.filter(
       (r) => r.status === "pending" && !noAuto.has(r.id) && r.threadId,
     );
-    await loadThreads(
-      gmail,
-      [...new Set(undecided.map((r) => r.threadId))].filter(
-        (tid) => !threads.has(tid),
-      ),
-      threads,
-    );
+    if (undecided.length > 0 && !skipGmail && sync.scan) {
+      const sent = await collectMessageRefs(
+        SENT_PROBE_MAX_MESSAGES,
+        async (pageToken) => {
+          if (!(await ledger.afford("messages.list"))) return { refs: [] };
+          const page = await gmail.users.messages.list({
+            userId: "me",
+            q: windowedQuery(SENT_MAIL_QUERY, since),
+            maxResults: GMAIL_PAGE_SIZE,
+            pageToken,
+          });
+          return {
+            refs: (page.data.messages ?? []).map((m) => ({
+              id: m.id ?? "",
+              threadId: m.threadId ?? undefined,
+            })),
+            nextPageToken: page.data.nextPageToken ?? undefined,
+          };
+        },
+      );
+      const repliedThreads = new Set(
+        sent.refs
+          .map((r) => r.threadId)
+          .filter((tid): tid is string => Boolean(tid)),
+      );
+      await loadThreads(
+        gmail,
+        threadsWorthFetching(
+          undecided.map((r) => r.threadId),
+          repliedThreads,
+          new Set(threads.keys()),
+        ),
+        threads,
+        ledger,
+      );
+    }
 
     for (const request of undecided) {
       const thread = threads.get(request.threadId);
@@ -202,16 +295,35 @@ export async function GET(req: NextRequest) {
       request.decisionNote = decision.note;
     }
 
+    let persisted = mailCache;
     if (cached > 0) {
-      await saveMailCache(user, pruneMailCache(mailCache, Date.now()));
+      persisted = pruneMailCache(mailCache, Date.now());
+      await saveMailCache(user, persisted);
     }
 
-    const direct = await fetchDirectRequests(
-      gmail,
-      user,
-      gmailAfterDate(since),
-      { selfEmail, team, decisions, skipIds: wantedIds },
-    );
+    const direct = skipGmail
+      ? []
+      : await fetchDirectRequests(gmail, user, gmailAfterDate(since), {
+          selfEmail,
+          team,
+          decisions,
+          skipIds: wantedIds,
+          ledger,
+        });
+
+    const nextSync = syncStateToStore({
+      scanned: sync.scan,
+      skipped: skipGmail,
+      exhausted: ledger.exhausted,
+      capped: listed.capped,
+      ids: [...wantedIds],
+      cached: persisted.entries,
+      historyId,
+      sinceMs,
+      nowMs,
+      previous: syncState,
+    });
+    if (nextSync) await saveSyncState(user, "leaves", nextSync);
 
     // Show only people on the manager's team (all, if no team is configured).
     const visible = dedupeLeaves([...filterByTeam(requests, team), ...direct]);
@@ -225,8 +337,24 @@ export async function GET(req: NextRequest) {
       selfEmail,
       since: since.toISOString(),
       capped: listed.capped,
+      ...(breaker
+        ? { partial: true as const, retryAtMs: breaker.retryAt }
+        : ledger.exhausted
+          ? { partial: true as const, retryAtMs: ledger.resetAtMs }
+          : {}),
     });
   } catch (e) {
+    const tripped = await noteGmailFailure(user, e);
+    if (tripped) {
+      return NextResponse.json({
+        requests: [],
+        selfEmail: "",
+        since: since.toISOString(),
+        capped: false,
+        partial: true as const,
+        retryAtMs: tripped.retryAt,
+      });
+    }
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "gmail_error" },
       { status: 500 },

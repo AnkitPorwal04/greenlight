@@ -273,4 +273,61 @@ describe("pruneMailCache", () => {
     const cache = cacheOf({ a: { t: NOW, m: null } });
     expect(pruneMailCache(cache, NOW)).toEqual(cache);
   });
+
+  it("skips one oversized entry instead of evicting the whole tail behind it", () => {
+    const small = (t: number) =>
+      cacheEntryFromParsed(parsed({ reason: "r" }), t, "t1", "body");
+
+    const entries: Record<string, MailCacheEntry> = {};
+    for (let i = 0; i < 5; i += 1) entries[`new${i}`] = small(NOW - i * 1000);
+    entries.fat = {
+      t: NOW - 5000,
+      m: { ...small(NOW).m!, bodyText: "b".repeat(MAIL_CACHE_MAX_BYTES - 1000) },
+    };
+    for (let i = 0; i < 5; i += 1) {
+      entries[`old${i}`] = small(NOW - 6000 - i * 1000);
+    }
+
+    const pruned = pruneMailCache(cacheOf(entries), NOW);
+
+    expect(pruned.entries.fat).toBeUndefined();
+    for (let i = 0; i < 5; i += 1) {
+      expect(pruned.entries[`new${i}`]).toBeDefined();
+      expect(pruned.entries[`old${i}`]).toBeDefined();
+    }
+    expect(JSON.stringify(pruned).length).toBeLessThanOrEqual(
+      MAIL_CACHE_MAX_BYTES,
+    );
+  });
+
+  it("holds far more real leave mail than the old body clip allowed", () => {
+    const entries: Record<string, MailCacheEntry> = {};
+    for (let i = 0; i < 500; i += 1) {
+      entries[`m${i}`] = cacheEntryFromParsed(
+        parsed({ reason: "Family function out of town." }),
+        NOW - i * 1000,
+        "18f2c3d4e5a6b7c8",
+        "Dear Manager,\n".repeat(36),
+      );
+    }
+    const pruned = pruneMailCache(cacheOf(entries), NOW);
+    expect(Object.keys(pruned.entries)).toHaveLength(500);
+  });
+});
+
+describe("cache sizing", () => {
+  it("keeps the fattest possible entry to a small share of the byte cap", () => {
+    const fattest = cacheEntryFromParsed(
+      parsed({ reason: "r".repeat(MAIL_CACHE_MAX_REASON_CHARS) }),
+      NOW,
+      "18f2c3d4e5a6b7c8",
+      "b".repeat(MAIL_CACHE_MAX_BODY_CHARS),
+    );
+    const bytes = JSON.stringify(fattest).length;
+    expect(MAIL_CACHE_MAX_BYTES / bytes).toBeGreaterThan(300);
+  });
+
+  it("still keeps a whole real greytHR leave mail", () => {
+    expect(MAIL_CACHE_MAX_BODY_CHARS).toBeGreaterThanOrEqual(1000);
+  });
 });

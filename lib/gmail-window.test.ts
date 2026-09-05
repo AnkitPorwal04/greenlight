@@ -5,6 +5,9 @@ import {
   leavesWindowStart,
   windowedQuery,
   CALENDAR_MAX_MESSAGES,
+  LEAVES_MAX_MESSAGES,
+  SENT_MAIL_QUERY,
+  SENT_PROBE_MAX_MESSAGES,
   GMAIL_PAGE_SIZE,
   type MessageRefPage,
 } from "./gmail-window";
@@ -189,5 +192,21 @@ describe("calendar message paging", () => {
 
   it("keeps a cap above a single Gmail page", () => {
     expect(CALENDAR_MAX_MESSAGES).toBeGreaterThan(GMAIL_PAGE_SIZE);
+  });
+});
+
+describe("sent mail probe", () => {
+  it("asks Gmail only for the manager's own mail", () => {
+    expect(SENT_MAIL_QUERY).toBe("from:me");
+  });
+
+  it("windows the probe to the same period as the leave query", () => {
+    const since = new Date(2026, 6, 1);
+    expect(windowedQuery(SENT_MAIL_QUERY, since)).toBe("from:me after:2026/07/01");
+  });
+
+  it("pages deep enough to cover a busy manager's window", () => {
+    expect(SENT_PROBE_MAX_MESSAGES).toBeGreaterThanOrEqual(LEAVES_MAX_MESSAGES);
+    expect(SENT_PROBE_MAX_MESSAGES % GMAIL_PAGE_SIZE).toBe(0);
   });
 });

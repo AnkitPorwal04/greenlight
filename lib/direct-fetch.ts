@@ -12,16 +12,24 @@ import {
   withDecision,
 } from "./direct";
 import type { DirectMail, DirectPerson } from "./direct";
+import {
+  buildDirectMail,
+  directCacheEntryFromMessage,
+  partitionDirectCached,
+  pruneDirectCache,
+} from "./direct-cache";
 import { loadEmployees } from "./employees";
-import { extractBodyText } from "./parser";
 import {
   loadClassification,
+  loadDirectCache,
   loadDismissed,
   saveClassification,
+  saveDirectCache,
 } from "./store";
 import { filterByTeam, teamCodeSet } from "./team";
 import type { Decision, LeaveRequest } from "./types";
 import { collectMessageRefs, GMAIL_PAGE_SIZE } from "./gmail-window";
+import type { QuotaLedger } from "./quota";
 
 export const DIRECT_MAX_MESSAGES = 100;
 export const DIRECT_BATCH_SIZE = 25;
@@ -34,6 +42,7 @@ export interface DirectFetchContext {
   team: string[];
   decisions: Record<string, Decision>;
   skipIds?: Set<string>;
+  ledger?: QuotaLedger;
 }
 
 export interface ClassifyJob {
@@ -57,18 +66,6 @@ interface DirectCandidate {
   person: DirectPerson;
   mail: DirectMail;
   from: string;
-}
-
-function header(msg: gmail_v1.Schema$Message, name: string): string {
-  return (
-    msg.payload?.headers?.find(
-      (h) => h.name?.toLowerCase() === name.toLowerCase()
-    )?.value ?? ""
-  );
-}
-
-function addresses(value: string): string[] {
-  return value.match(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g) ?? [];
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -162,13 +159,19 @@ export async function fetchDirectRequests(
     const queries = buildDirectQueries([...byEmail.keys()], afterYmd);
     if (queries.length === 0) return [];
 
+    const ledger = ctx.ledger;
+
     const seen = new Set<string>();
     const refs: { id: string; threadId?: string }[] = [];
     for (const q of queries) {
       if (refs.length >= DIRECT_MAX_MESSAGES) break;
+      if (ledger?.exhausted) break;
       const page = await collectMessageRefs(
         DIRECT_MAX_MESSAGES - refs.length,
         async (pageToken) => {
+          if (ledger && !(await ledger.afford("messages.list"))) {
+            return { refs: [] };
+          }
           const listed = await gmail.users.messages.list({
             userId: "me",
             q,
@@ -196,53 +199,49 @@ export async function fetchDirectRequests(
     const wanted = refs.filter((r) => !skip.has(r.id) && !dropped.has(r.id));
     if (wanted.length === 0) return [];
 
-    const messages: gmail_v1.Schema$Message[] = [];
-    for (const batch of chunk(wanted, DIRECT_BATCH_SIZE)) {
-      const fetched = await Promise.allSettled(
-        batch.map((ref) =>
-          gmail.users.messages.get({ userId: "me", id: ref.id, format: "full" })
-        )
-      );
-      for (const res of fetched) {
-        if (res.status === "fulfilled") messages.push(res.value.data);
-      }
-    }
-
-    messages.sort(
-      (a, b) => Number(b.internalDate ?? 0) - Number(a.internalDate ?? 0)
+    const mailCache = await loadDirectCache(user);
+    const { missing } = partitionDirectCached(
+      wanted.map((r) => r.id),
+      mailCache
     );
 
-    const self = ctx.selfEmail.trim().toLowerCase();
-    const candidates: DirectCandidate[] = [];
-
-    for (const msg of messages) {
-      const id = msg.id ?? "";
-      if (!id) continue;
-
-      const from = header(msg, "From");
-      const senderEmail = addresses(from)[0]?.toLowerCase() ?? "";
-      const person = byEmail.get(senderEmail);
-      if (!person || senderEmail === self) continue;
-
-      candidates.push({
-        person,
-        mail: {
-          id,
-          threadId: msg.threadId ?? "",
-          subject: header(msg, "Subject"),
-          bodyText: extractBodyText(msg),
-          receivedAt: new Date(
-            msg.internalDate ? parseInt(msg.internalDate) : Date.now()
-          ).toISOString(),
-          senderEmail,
-          recipients: [
-            ...addresses(header(msg, "To")),
-            ...addresses(header(msg, "Cc")),
-          ],
-          selfEmail: self,
-        },
-        from,
+    let added = 0;
+    for (const batch of chunk(missing, DIRECT_BATCH_SIZE)) {
+      if (ledger && !(await ledger.afford("messages.get", batch.length))) break;
+      const fetched = await Promise.allSettled(
+        batch.map((id) =>
+          gmail.users.messages.get({ userId: "me", id, format: "full" })
+        )
+      );
+      fetched.forEach((res, i) => {
+        if (res.status !== "fulfilled") return;
+        const msg = res.value.data;
+        const id = msg.id ?? batch[i];
+        if (!id) return;
+        mailCache.entries[id] = directCacheEntryFromMessage(msg);
+        added += 1;
       });
+    }
+
+    if (added > 0) {
+      await saveDirectCache(user, pruneDirectCache(mailCache, Date.now()));
+    }
+
+    const self = ctx.selfEmail.trim().toLowerCase();
+    const cachedRefs = wanted
+      .map((ref) => ({ id: ref.id, entry: mailCache.entries[ref.id] }))
+      .filter((row) => Boolean(row.entry));
+    cachedRefs.sort((a, b) => b.entry.t - a.entry.t);
+
+    const candidates: DirectCandidate[] = [];
+    for (const row of cachedRefs) {
+      const mail = buildDirectMail(row.id, row.entry, self);
+      if (!mail) continue;
+
+      const person = byEmail.get(mail.senderEmail);
+      if (!person || mail.senderEmail === self) continue;
+
+      candidates.push({ person, mail, from: row.entry.m!.from });
     }
     if (candidates.length === 0) return [];
 

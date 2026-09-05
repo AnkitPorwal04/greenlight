@@ -50,6 +50,7 @@ import {
   searchWithoutAuthParam,
 } from "@/lib/auth-notice";
 import { recordedToast, type RecordedStatus } from "@/lib/outcome";
+import { CATCH_UP_MESSAGE, catchUpSuffix } from "@/lib/catch-up-notice";
 import type { StatsPayload } from "@/lib/stats";
 import type { LeaveRequest } from "@/lib/types";
 
@@ -101,6 +102,7 @@ export default function Home() {
   });
   const [confirmClearAll, setConfirmClearAll] = useState(false);
   const [capped, setCapped] = useState(false);
+  const [gmailCatchUp, setGmailCatchUp] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [exiting, setExiting] = useState<string[]>([]);
   const [pulse, setPulse] = useState<{ id: string; action: Action } | null>(
@@ -167,14 +169,23 @@ export default function Home() {
         if (data.error !== "not_connected") setFetchError(data.error);
         setRequests([]);
         setCapped(false);
+        setGmailCatchUp(null);
         return;
       }
       setRequests(data.requests);
       setCapped(Boolean(data.capped));
+      setGmailCatchUp(
+        data.partial
+          ? typeof data.retryAtMs === "number"
+            ? data.retryAtMs
+            : 0
+          : null
+      );
     } catch {
       if (loadId === loadIdRef.current) {
         setFetchError("Could not reach the server");
         setCapped(false);
+        setGmailCatchUp(null);
       }
     } finally {
       if (minVisible) await minVisible;
@@ -847,6 +858,16 @@ export default function Home() {
                     }
                   />
                 </section>
+
+                {view === "dashboard" && gmailCatchUp !== null && (
+                  <p className="mt-6 flex items-start gap-2 border-l-2 border-[var(--accent-ring)] bg-[var(--accent-soft)] py-2 pl-3 pr-3 text-[13px] text-[var(--text-secondary)]">
+                    <IconAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>
+                      {CATCH_UP_MESSAGE}
+                      {catchUpSuffix(gmailCatchUp)}
+                    </span>
+                  </p>
+                )}
 
                 {view === "dashboard" && fetchError && (
                   <p className="mt-6 flex items-start gap-2 border-l-2 border-[var(--signal-red)] py-1 pl-3 text-[13px] text-[var(--c-rose)]">

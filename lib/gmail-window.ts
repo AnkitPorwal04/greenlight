@@ -7,9 +7,12 @@ export const LEAVE_MAIL_QUERY =
   process.env.LEAVE_MAIL_QUERY ??
   'from:no-reply@greythr.com (subject:"Leave Application from" OR subject:cancellation)';
 
+export const SENT_MAIL_QUERY = "from:me";
+
 export const LEAVES_MAX_MESSAGES = 500;
 export const HISTORY_MAX_MESSAGES = 1000;
 export const CALENDAR_MAX_MESSAGES = 1000;
+export const SENT_PROBE_MAX_MESSAGES = 2000;
 export const GMAIL_PAGE_SIZE = 100;
 
 export const CALENDAR_MONTHS_BACK = 6;

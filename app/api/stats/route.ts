@@ -1,13 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { gmail_v1 } from "@googleapis/gmail";
 import { getAuthorizedClient, getGmail } from "@/lib/google";
 import { getUserFromRequest } from "@/lib/session";
 import { parseLeaveMail, extractBodyText } from "@/lib/parser";
 import {
   loadDecisions,
   loadMailCache,
+  loadSyncState,
   saveMailCache,
+  saveSyncState,
   loadTeam,
 } from "@/lib/store";
+import {
+  decideSync,
+  normalizeHistoryId,
+  syncStateToStore,
+} from "@/lib/gmail-sync";
 import {
   cacheEntryFromParsed,
   partitionCached,
@@ -24,6 +32,9 @@ import { cancelledLeaveTimes, isLeaveCancelled } from "@/lib/cancellation";
 import { fetchDirectRequests } from "@/lib/direct-fetch";
 import { dedupeLeaves, type DedupableRow } from "@/lib/dedupe";
 import { LEAVE_MAIL_QUERY } from "@/lib/gmail-window";
+import { createLedger } from "@/lib/quota";
+import { noteGmailFailure, readBreaker } from "@/lib/gmail-breaker";
+import { cachedIdsSince, resolveWindowRefs } from "@/lib/cached-window";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -31,6 +42,11 @@ export const maxDuration = 60;
 const MAX_MESSAGES = 500;
 const BATCH_SIZE = 40;
 const STATS_SINCE = process.env.STATS_SINCE ?? "2026/08/01";
+
+function statsSinceMs(): number {
+  const parsed = Date.parse(STATS_SINCE);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
 
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -51,35 +67,81 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "not_connected" }, { status: 401 });
   }
 
+  const ledger = createLedger(user);
+  const breaker = await readBreaker(user);
+  const skipGmail = breaker !== null;
+
+  const sinceMs = statsSinceMs();
+
   try {
     const gmail = getGmail(client);
-    const [profile, list, decisions, team, mailCache, directory] =
+    const [profile, decisions, team, mailCache, directory, syncState] =
       await Promise.all([
-        gmail.users.getProfile({ userId: "me" }),
-        gmail.users.messages.list({
-          userId: "me",
-          q: `${LEAVE_MAIL_QUERY} after:${STATS_SINCE}`,
-          maxResults: MAX_MESSAGES,
-        }),
+        skipGmail
+          ? Promise.resolve(null)
+          : gmail.users.getProfile({ userId: "me" }).then(async (res) => {
+              await ledger.charge("getProfile");
+              return res;
+            }),
         loadDecisions(user),
         loadTeam(user),
         loadMailCache(user),
         loadEmployees(),
+        loadSyncState(user, "stats"),
       ]);
 
-    const selfEmail = profile.data.emailAddress ?? "";
-    const ids = [
+    const selfEmail = profile?.data.emailAddress ?? "";
+    const historyId = normalizeHistoryId(profile?.data.historyId);
+    const cachedIds = cachedIdsSince(mailCache.entries, sinceMs, MAX_MESSAGES);
+    const nowMs = Date.now();
+
+    const sync = skipGmail
+      ? { scan: false }
+      : await decideSync(
+          syncState,
+          { historyId, sinceMs, nowMs, cachedCount: cachedIds.length },
+          async (startHistoryId) => {
+            if (!(await ledger.afford("history.list"))) return null;
+            const probed = await gmail.users.history.list({
+              userId: "me",
+              startHistoryId,
+              historyTypes: ["messageAdded"],
+            });
+            return probed.data;
+          }
+        );
+
+    let list = { data: {} as gmail_v1.Schema$ListMessagesResponse };
+    if (sync.scan && (await ledger.afford("messages.list"))) {
+      list = await gmail.users.messages.list({
+        userId: "me",
+        q: `${LEAVE_MAIL_QUERY} after:${STATS_SINCE}`,
+        maxResults: MAX_MESSAGES,
+      });
+    }
+
+    const listedIds = [
       ...new Set(
         (list.data.messages ?? [])
           .map((m) => m.id)
           .filter((id): id is string => Boolean(id))
       ),
     ];
+    const capped = sync.scan && listedIds.length >= MAX_MESSAGES;
+    const ids = resolveWindowRefs({
+      scan: sync.scan,
+      degraded: ledger.exhausted,
+      listed: listedIds.map((id) => ({ id })),
+      cachedIds,
+      entries: mailCache.entries,
+      cap: MAX_MESSAGES,
+    }).map((r) => r.id);
 
     const { missing } = partitionCached(ids, mailCache);
 
     let cached = 0;
     for (const batch of chunk(missing, BATCH_SIZE)) {
+      if (!(await ledger.afford("messages.get", batch.length))) break;
       const fetched = await Promise.all(
         batch.map((id) =>
           gmail.users.messages.get({ userId: "me", id, format: "full" })
@@ -99,8 +161,10 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    let persisted = mailCache;
     if (cached > 0) {
-      await saveMailCache(user, pruneMailCache(mailCache, Date.now()));
+      persisted = pruneMailCache(mailCache, Date.now());
+      await saveMailCache(user, persisted);
     }
 
     const parsedRows = ids
@@ -128,12 +192,15 @@ export async function GET(req: NextRequest) {
       }))
     );
 
-    const direct = await fetchDirectRequests(gmail, user, STATS_SINCE, {
-      selfEmail,
-      team,
-      decisions,
-      skipIds: new Set(ids),
-    });
+    const direct = skipGmail
+      ? []
+      : await fetchDirectRequests(gmail, user, STATS_SINCE, {
+          selfEmail,
+          team,
+          decisions,
+          skipIds: new Set(ids),
+          ledger,
+        });
 
     const dedupeInput: DedupableRow[] = [
       ...parsedRows.map((r) => ({
@@ -201,12 +268,40 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    const nextSync = syncStateToStore({
+      scanned: sync.scan,
+      skipped: skipGmail,
+      exhausted: ledger.exhausted,
+      capped,
+      ids,
+      cached: persisted.entries,
+      historyId,
+      sinceMs,
+      nowMs,
+      previous: syncState,
+    });
+    if (nextSync) await saveSyncState(user, "stats", nextSync);
+
     // Count only people on the manager's team (all, if no team is configured).
     return NextResponse.json({
       ...aggregateStatsForTeam(entries, team),
       roster: teamRoster(team, directory),
+      ...(breaker
+        ? { partial: true as const, retryAtMs: breaker.retryAt }
+        : ledger.exhausted
+          ? { partial: true as const, retryAtMs: ledger.resetAtMs }
+          : {}),
     });
   } catch (e) {
+    const tripped = await noteGmailFailure(user, e);
+    if (tripped) {
+      return NextResponse.json(
+        { error: "gmail_rate_limited", retryAtMs: tripped.retryAt },
+        { status: 503, headers: { "Retry-After": String(
+          Math.max(1, Math.ceil((tripped.retryAt - Date.now()) / 1000))
+        ) } }
+      );
+    }
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "gmail_error" },
       { status: 500 }
