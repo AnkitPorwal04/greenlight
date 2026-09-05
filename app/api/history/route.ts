@@ -26,7 +26,7 @@ import { filterByTeam } from "@/lib/team";
 import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
 import { createLedger } from "@/lib/quota";
 import { noteGmailFailure, readBreaker } from "@/lib/gmail-breaker";
-import { cachedIdsSince } from "@/lib/cached-window";
+import { cachedIdsSince, resolveWindowRefs } from "@/lib/cached-window";
 import { fetchDirectRequests } from "@/lib/direct-fetch";
 import { gmailAfterDate, historyMonthCount, monthStart } from "@/lib/history";
 import {
@@ -140,7 +140,14 @@ export async function GET(req: NextRequest) {
         })
       : { refs: [], capped: false };
 
-    const ids = sync.scan ? listed.refs.map((r) => r.id) : cachedIds;
+    const ids = resolveWindowRefs({
+      scan: sync.scan,
+      degraded: ledger.exhausted,
+      listed: listed.refs,
+      cachedIds,
+      entries: mailCache.entries,
+      cap: HISTORY_MAX_MESSAGES,
+    }).map((r) => r.id);
     const { missing } = partitionCached(ids, mailCache);
 
     let cached = 0;

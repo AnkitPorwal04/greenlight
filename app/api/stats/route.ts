@@ -34,7 +34,7 @@ import { dedupeLeaves, type DedupableRow } from "@/lib/dedupe";
 import { LEAVE_MAIL_QUERY } from "@/lib/gmail-window";
 import { createLedger } from "@/lib/quota";
 import { noteGmailFailure, readBreaker } from "@/lib/gmail-breaker";
-import { cachedIdsSince } from "@/lib/cached-window";
+import { cachedIdsSince, resolveWindowRefs } from "@/lib/cached-window";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -120,16 +120,22 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const ids = sync.scan
-      ? [
-          ...new Set(
-            (list.data.messages ?? [])
-              .map((m) => m.id)
-              .filter((id): id is string => Boolean(id))
-          ),
-        ]
-      : cachedIds;
-    const capped = sync.scan && ids.length >= MAX_MESSAGES;
+    const listedIds = [
+      ...new Set(
+        (list.data.messages ?? [])
+          .map((m) => m.id)
+          .filter((id): id is string => Boolean(id))
+      ),
+    ];
+    const capped = sync.scan && listedIds.length >= MAX_MESSAGES;
+    const ids = resolveWindowRefs({
+      scan: sync.scan,
+      degraded: ledger.exhausted,
+      listed: listedIds.map((id) => ({ id })),
+      cachedIds,
+      entries: mailCache.entries,
+      cap: MAX_MESSAGES,
+    }).map((r) => r.id);
 
     const { missing } = partitionCached(ids, mailCache);
 

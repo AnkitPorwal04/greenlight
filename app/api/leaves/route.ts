@@ -29,7 +29,7 @@ import { filterByTeam } from "@/lib/team";
 import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
 import { createLedger, type QuotaLedger } from "@/lib/quota";
 import { noteGmailFailure, readBreaker } from "@/lib/gmail-breaker";
-import { cachedIdsSince } from "@/lib/cached-window";
+import { cachedIdsSince, resolveWindowRefs } from "@/lib/cached-window";
 import { fetchDirectRequests } from "@/lib/direct-fetch";
 import { dedupeLeaves } from "@/lib/dedupe";
 import { gmailAfterDate } from "@/lib/history";
@@ -173,12 +173,14 @@ export async function GET(req: NextRequest) {
         })
       : { refs: [], capped: false };
 
-    const refs = sync.scan
-      ? listed.refs
-      : cachedIds.map((id) => ({
-          id,
-          threadId: mailCache.entries[id]?.m?.threadId,
-        }));
+    const refs = resolveWindowRefs({
+      scan: sync.scan,
+      degraded: ledger.exhausted,
+      listed: listed.refs,
+      cachedIds,
+      entries: mailCache.entries,
+      cap: LEAVES_MAX_MESSAGES,
+    });
 
     const wantedIds = new Set(refs.map((r) => r.id));
     const { missing } = partitionCached([...wantedIds], mailCache);
