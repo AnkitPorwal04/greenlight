@@ -253,7 +253,10 @@ describe("createLedger", () => {
   it("spends down a real cold budget batch by batch", async () => {
     const ledger = createLedger(freshEmail(), () => 0);
     let batches = 0;
-    while (await ledger.afford("messages.get", 40)) batches += 1;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      if (!(await ledger.afford("messages.get", 40))) break;
+      batches += 1;
+    }
     expect(batches).toBe(6);
     expect(ledger.spent).toBe(4800);
     expect(ledger.exhausted).toBe(true);
