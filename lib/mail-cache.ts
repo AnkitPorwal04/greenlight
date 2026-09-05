@@ -6,7 +6,7 @@ export const MAIL_CACHE_MAX_ENTRIES = 3000;
 export const MAIL_CACHE_MAX_AGE_MS = 400 * 24 * 60 * 60 * 1000;
 export const MAIL_CACHE_MAX_BYTES = 700_000;
 export const MAIL_CACHE_MAX_REASON_CHARS = 500;
-export const MAIL_CACHE_MAX_BODY_CHARS = 8000;
+export const MAIL_CACHE_MAX_BODY_CHARS = 1200;
 
 export interface CachedMail {
   threadId: string;
@@ -172,7 +172,7 @@ export function pruneMailCache(cache: MailCache, nowMs: number): MailCache {
   for (const [id, entry] of fresh) {
     if (count >= MAIL_CACHE_MAX_ENTRIES) break;
     const size = entryBytes(id, entry);
-    if (bytes + size > MAIL_CACHE_MAX_BYTES) break;
+    if (bytes + size > MAIL_CACHE_MAX_BYTES) continue;
     entries[id] = entry;
     bytes += size;
     count += 1;
