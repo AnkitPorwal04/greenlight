@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { gmail_v1 } from "@googleapis/gmail";
 import { getAuthorizedClient, getGmail } from "@/lib/google";
 import { getUserFromRequest } from "@/lib/session";
 import { parseLeaveMail, extractBodyText } from "@/lib/parser";
@@ -24,6 +25,7 @@ import { cancelledLeaveTimes, isLeaveCancelled } from "@/lib/cancellation";
 import { fetchDirectRequests } from "@/lib/direct-fetch";
 import { dedupeLeaves, type DedupableRow } from "@/lib/dedupe";
 import { LEAVE_MAIL_QUERY } from "@/lib/gmail-window";
+import { createLedger } from "@/lib/quota";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -51,16 +53,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "not_connected" }, { status: 401 });
   }
 
+  const ledger = createLedger(user);
+
   try {
     const gmail = getGmail(client);
     const [profile, list, decisions, team, mailCache, directory] =
       await Promise.all([
-        gmail.users.getProfile({ userId: "me" }),
-        gmail.users.messages.list({
-          userId: "me",
-          q: `${LEAVE_MAIL_QUERY} after:${STATS_SINCE}`,
-          maxResults: MAX_MESSAGES,
+        gmail.users.getProfile({ userId: "me" }).then(async (res) => {
+          await ledger.charge("getProfile");
+          return res;
         }),
+        ledger.afford("messages.list").then((ok) =>
+          ok
+            ? gmail.users.messages.list({
+                userId: "me",
+                q: `${LEAVE_MAIL_QUERY} after:${STATS_SINCE}`,
+                maxResults: MAX_MESSAGES,
+              })
+            : { data: {} as gmail_v1.Schema$ListMessagesResponse }
+        ),
         loadDecisions(user),
         loadTeam(user),
         loadMailCache(user),
@@ -80,6 +91,7 @@ export async function GET(req: NextRequest) {
 
     let cached = 0;
     for (const batch of chunk(missing, BATCH_SIZE)) {
+      if (!(await ledger.afford("messages.get", batch.length))) break;
       const fetched = await Promise.all(
         batch.map((id) =>
           gmail.users.messages.get({ userId: "me", id, format: "full" })
@@ -133,6 +145,7 @@ export async function GET(req: NextRequest) {
       team,
       decisions,
       skipIds: new Set(ids),
+      ledger,
     });
 
     const dedupeInput: DedupableRow[] = [
@@ -205,6 +218,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       ...aggregateStatsForTeam(entries, team),
       roster: teamRoster(team, directory),
+      ...(ledger.exhausted
+        ? { partial: true as const, retryAtMs: ledger.resetAtMs }
+        : {}),
     });
   } catch (e) {
     return NextResponse.json(

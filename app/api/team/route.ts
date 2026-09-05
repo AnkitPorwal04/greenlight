@@ -8,6 +8,7 @@ import { loadTeam, loadTeamName, saveTeam, saveTeamName } from "@/lib/store";
 import { managerDisplayName } from "@/lib/team-name";
 import { gmailAfterDate, monthStart } from "@/lib/history";
 import { LEAVE_MAIL_QUERY } from "@/lib/gmail-window";
+import { createLedger } from "@/lib/quota";
 
 export const dynamic = "force-dynamic";
 
@@ -47,15 +48,24 @@ export async function GET(req: NextRequest) {
 
   const since = monthStart(new Date(), DISCOVER_MONTHS - 1);
 
+  const ledger = createLedger(user);
+
   try {
     const gmail = getGmail(client);
     const [profile, list, team, teamName, employees] = await Promise.all([
-      gmail.users.getProfile({ userId: "me" }),
-      gmail.users.messages.list({
-        userId: "me",
-        q: `${LEAVE_MAIL_QUERY} after:${gmailAfterDate(since)}`,
-        maxResults: MAX_MESSAGES,
+      gmail.users.getProfile({ userId: "me" }).then(async (res) => {
+        await ledger.charge("getProfile");
+        return res;
       }),
+      ledger.afford("messages.list").then((ok) =>
+        ok
+          ? gmail.users.messages.list({
+              userId: "me",
+              q: `${LEAVE_MAIL_QUERY} after:${gmailAfterDate(since)}`,
+              maxResults: MAX_MESSAGES,
+            })
+          : { data: {} as gmail_v1.Schema$ListMessagesResponse }
+      ),
       loadTeam(user),
       loadTeamName(user),
       loadEmployees(),
@@ -77,6 +87,7 @@ export async function GET(req: NextRequest) {
     // rather than failing the whole request.
     const messages: gmail_v1.Schema$Message[] = [];
     for (const batch of chunk(ids, BATCH_SIZE)) {
+      if (!(await ledger.afford("messages.get", batch.length))) break;
       const fetched = await Promise.allSettled(
         batch.map((id) =>
           gmail.users.messages.get({
@@ -131,7 +142,15 @@ export async function GET(req: NextRequest) {
       email: user,
     };
 
-    return NextResponse.json({ team, teamName, discovered, manager });
+    return NextResponse.json({
+      team,
+      teamName,
+      discovered,
+      manager,
+      ...(ledger.exhausted
+        ? { partial: true as const, retryAtMs: ledger.resetAtMs }
+        : {}),
+    });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "gmail_error" },

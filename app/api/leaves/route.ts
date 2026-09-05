@@ -20,6 +20,7 @@ import {
 import { loadEmployees } from "@/lib/employees";
 import { filterByTeam } from "@/lib/team";
 import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
+import { createLedger, type QuotaLedger } from "@/lib/quota";
 import { fetchDirectRequests } from "@/lib/direct-fetch";
 import { dedupeLeaves } from "@/lib/dedupe";
 import { gmailAfterDate } from "@/lib/history";
@@ -56,8 +57,10 @@ async function loadThreads(
   gmail: gmail_v1.Gmail,
   threadIds: string[],
   into: Map<string, gmail_v1.Schema$Thread>,
+  ledger: QuotaLedger,
 ): Promise<void> {
   for (const batch of chunk(threadIds, THREAD_BATCH_SIZE)) {
+    if (!(await ledger.afford("threads.get", batch.length))) break;
     const fetched = await Promise.all(
       batch.map((tid) =>
         gmail.users.threads.get({
@@ -93,13 +96,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "not_connected" }, { status: 401 });
   }
 
+  const ledger = createLedger(user);
+
   try {
     const gmail = getGmail(client);
     const since = leavesWindowStart();
     const [profile, listed, decisions, employees, undone, team, mailCache] =
       await Promise.all([
-        gmail.users.getProfile({ userId: "me" }),
+        gmail.users.getProfile({ userId: "me" }).then(async (res) => {
+          await ledger.charge("getProfile");
+          return res;
+        }),
         collectMessageRefs(LEAVES_MAX_MESSAGES, async (pageToken) => {
+          if (!(await ledger.afford("messages.list"))) return { refs: [] };
           const page = await gmail.users.messages.list({
             userId: "me",
             q: windowedQuery(LEAVE_MAIL_QUERY, since),
@@ -140,6 +149,7 @@ export async function GET(req: NextRequest) {
         ),
       ],
       threads,
+      ledger,
     );
 
     let cached = 0;
@@ -181,6 +191,7 @@ export async function GET(req: NextRequest) {
       const sent = await collectMessageRefs(
         SENT_PROBE_MAX_MESSAGES,
         async (pageToken) => {
+          if (!(await ledger.afford("messages.list"))) return { refs: [] };
           const page = await gmail.users.messages.list({
             userId: "me",
             q: windowedQuery(SENT_MAIL_QUERY, since),
@@ -209,6 +220,7 @@ export async function GET(req: NextRequest) {
           new Set(threads.keys()),
         ),
         threads,
+        ledger,
       );
     }
 
@@ -242,7 +254,7 @@ export async function GET(req: NextRequest) {
       gmail,
       user,
       gmailAfterDate(since),
-      { selfEmail, team, decisions, skipIds: wantedIds },
+      { selfEmail, team, decisions, skipIds: wantedIds, ledger },
     );
 
     // Show only people on the manager's team (all, if no team is configured).
@@ -257,6 +269,9 @@ export async function GET(req: NextRequest) {
       selfEmail,
       since: since.toISOString(),
       capped: listed.capped,
+      ...(ledger.exhausted
+        ? { partial: true as const, retryAtMs: ledger.resetAtMs }
+        : {}),
     });
   } catch (e) {
     return NextResponse.json(

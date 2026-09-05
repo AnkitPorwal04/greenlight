@@ -53,6 +53,33 @@ export async function setJSON(
   });
 }
 
+export async function incrBy(
+  key: string,
+  amount: number,
+  ttlSeconds?: number
+): Promise<number> {
+  const ttl = ttlSeconds && ttlSeconds > 0 ? Math.ceil(ttlSeconds) : 0;
+
+  if (redis) {
+    if (ttl > 0) {
+      const [total] = await redis
+        .multi()
+        .incrby(key, amount)
+        .expire(key, ttl)
+        .exec<[number, 0 | 1]>();
+      return total;
+    }
+    return await redis.incrby(key, amount);
+  }
+
+  const stored = await getJSON<{ n: number; e: number }>(key);
+  const now = Date.now();
+  const live = stored && typeof stored.n === "number" && stored.e > now;
+  const total = (live ? stored.n : 0) + amount;
+  await setJSON(key, { n: total, e: ttl > 0 ? now + ttl * 1000 : now + 60_000 });
+  return total;
+}
+
 export async function delKey(key: string): Promise<void> {
   if (redis) {
     await redis.del(key);

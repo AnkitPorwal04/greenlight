@@ -15,6 +15,7 @@ import {
 } from "@/lib/mail-cache";
 import { filterByTeam } from "@/lib/team";
 import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
+import { createLedger } from "@/lib/quota";
 import { gmailAfterDate } from "@/lib/history";
 import { toCalendarLeaves } from "@/lib/calendar";
 import { fetchDirectRequests } from "@/lib/direct-fetch";
@@ -67,11 +68,19 @@ export async function GET(req: NextRequest) {
 
   const since = calendarWindowStart();
 
+  const ledger = createLedger(user);
+
   try {
     const gmail = getGmail(client);
     const [profile, listed, decisions, team, mailCache] = await Promise.all([
-      gmail.users.getProfile({ userId: "me" }),
+      gmail.users
+        .getProfile({ userId: "me" })
+        .then(async (res) => {
+          await ledger.charge("getProfile");
+          return res;
+        }),
       collectMessageRefs(CALENDAR_MAX_MESSAGES, async (pageToken) => {
+        if (!(await ledger.afford("messages.list"))) return { refs: [] };
         const page = await gmail.users.messages.list({
           userId: "me",
           q: windowedQuery(LEAVE_MAIL_QUERY, since),
@@ -97,6 +106,7 @@ export async function GET(req: NextRequest) {
 
     let cached = 0;
     for (const batch of chunk(missing, BATCH_SIZE)) {
+      if (!(await ledger.afford("messages.get", batch.length))) break;
       const fetched = await Promise.allSettled(
         batch.map((id) =>
           gmail.users.messages.get({ userId: "me", id, format: "full" })
@@ -139,6 +149,7 @@ export async function GET(req: NextRequest) {
       team,
       decisions,
       skipIds: new Set(ids),
+      ledger,
     });
     const directRows: (CalendarCandidate & DedupableRow)[] = direct
       .filter((r) => !r.needsReview)
@@ -159,7 +170,12 @@ export async function GET(req: NextRequest) {
     const leaves = toCalendarLeaves(
       dedupeLeaves(filterByTeam([...rows, ...directRows], team))
     );
-    return NextResponse.json({ leaves });
+    return NextResponse.json({
+      leaves,
+      ...(ledger.exhausted
+        ? { partial: true as const, retryAtMs: ledger.resetAtMs }
+        : {}),
+    });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "gmail_error" },

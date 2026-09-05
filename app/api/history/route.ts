@@ -17,6 +17,7 @@ import {
 import { loadEmployees } from "@/lib/employees";
 import { filterByTeam } from "@/lib/team";
 import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
+import { createLedger } from "@/lib/quota";
 import { fetchDirectRequests } from "@/lib/direct-fetch";
 import { gmailAfterDate, historyMonthCount, monthStart } from "@/lib/history";
 import {
@@ -66,12 +67,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "not_connected" }, { status: 401 });
   }
 
+  const ledger = createLedger(user);
+
   try {
     const gmail = getGmail(client);
     const [profile, listed, decisions, employees, team, mailCache] =
       await Promise.all([
-        gmail.users.getProfile({ userId: "me" }),
+        gmail.users.getProfile({ userId: "me" }).then(async (res) => {
+          await ledger.charge("getProfile");
+          return res;
+        }),
         collectMessageRefs(HISTORY_MAX_MESSAGES, async (pageToken) => {
+          if (!(await ledger.afford("messages.list"))) return { refs: [] };
           const page = await gmail.users.messages.list({
             userId: "me",
             q: windowedQuery(LEAVE_MAIL_QUERY, since),
@@ -95,6 +102,7 @@ export async function GET(req: NextRequest) {
 
     let cached = 0;
     for (const batch of chunk(missing, BATCH_SIZE)) {
+      if (!(await ledger.afford("messages.get", batch.length))) break;
       const fetched = await Promise.all(
         batch.map((id) =>
           gmail.users.messages.get({ userId: "me", id, format: "full" })
@@ -130,7 +138,7 @@ export async function GET(req: NextRequest) {
       gmail,
       user,
       gmailAfterDate(since),
-      { selfEmail, team, decisions, skipIds: new Set(ids) }
+      { selfEmail, team, decisions, skipIds: new Set(ids), ledger }
     );
 
     // Show only people on the manager's team (all, if no team is configured).
@@ -146,6 +154,9 @@ export async function GET(req: NextRequest) {
       months,
       since: since.toISOString(),
       capped: listed.capped,
+      ...(ledger.exhausted
+        ? { partial: true as const, retryAtMs: ledger.resetAtMs }
+        : {}),
     });
   } catch (e) {
     return NextResponse.json(

@@ -29,6 +29,7 @@ import {
 import { filterByTeam, teamCodeSet } from "./team";
 import type { Decision, LeaveRequest } from "./types";
 import { collectMessageRefs, GMAIL_PAGE_SIZE } from "./gmail-window";
+import type { QuotaLedger } from "./quota";
 
 export const DIRECT_MAX_MESSAGES = 100;
 export const DIRECT_BATCH_SIZE = 25;
@@ -41,6 +42,7 @@ export interface DirectFetchContext {
   team: string[];
   decisions: Record<string, Decision>;
   skipIds?: Set<string>;
+  ledger?: QuotaLedger;
 }
 
 export interface ClassifyJob {
@@ -157,13 +159,19 @@ export async function fetchDirectRequests(
     const queries = buildDirectQueries([...byEmail.keys()], afterYmd);
     if (queries.length === 0) return [];
 
+    const ledger = ctx.ledger;
+
     const seen = new Set<string>();
     const refs: { id: string; threadId?: string }[] = [];
     for (const q of queries) {
       if (refs.length >= DIRECT_MAX_MESSAGES) break;
+      if (ledger?.exhausted) break;
       const page = await collectMessageRefs(
         DIRECT_MAX_MESSAGES - refs.length,
         async (pageToken) => {
+          if (ledger && !(await ledger.afford("messages.list"))) {
+            return { refs: [] };
+          }
           const listed = await gmail.users.messages.list({
             userId: "me",
             q,
@@ -199,6 +207,7 @@ export async function fetchDirectRequests(
 
     let added = 0;
     for (const batch of chunk(missing, DIRECT_BATCH_SIZE)) {
+      if (ledger && !(await ledger.afford("messages.get", batch.length))) break;
       const fetched = await Promise.allSettled(
         batch.map((id) =>
           gmail.users.messages.get({ userId: "me", id, format: "full" })
