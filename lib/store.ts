@@ -2,6 +2,8 @@ import { delKey, getJSON, setJSON } from "./storage";
 import { normalizeTeamName } from "./team-name";
 import { emptyMailCache, readMailCache } from "./mail-cache";
 import type { MailCache } from "./mail-cache";
+import { emptyDirectCache, readDirectCache } from "./direct-cache";
+import type { DirectCache } from "./direct-cache";
 import type { DirectClassification } from "./classify";
 import type { Decision } from "./types";
 
@@ -35,6 +37,29 @@ function dismissedKey(email: string) {
 
 function mailCacheKey(email: string) {
   return `mailcache:${email.toLowerCase()}`;
+}
+
+function directCacheKey(email: string) {
+  return `directcache:${email.toLowerCase()}`;
+}
+
+export async function loadDirectCache(email: string): Promise<DirectCache> {
+  try {
+    return readDirectCache(await getJSON<unknown>(directCacheKey(email)));
+  } catch {
+    return emptyDirectCache();
+  }
+}
+
+export async function saveDirectCache(
+  email: string,
+  cache: DirectCache
+): Promise<void> {
+  try {
+    await setJSON(directCacheKey(email), cache, MAIL_CACHE_TTL_SECONDS);
+  } catch {
+    return;
+  }
 }
 
 export async function loadMailCache(email: string): Promise<MailCache> {
