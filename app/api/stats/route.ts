@@ -6,9 +6,16 @@ import { parseLeaveMail, extractBodyText } from "@/lib/parser";
 import {
   loadDecisions,
   loadMailCache,
+  loadSyncState,
   saveMailCache,
+  saveSyncState,
   loadTeam,
 } from "@/lib/store";
+import {
+  decideSync,
+  normalizeHistoryId,
+  syncStateToStore,
+} from "@/lib/gmail-sync";
 import {
   cacheEntryFromParsed,
   partitionCached,
@@ -64,9 +71,11 @@ export async function GET(req: NextRequest) {
   const breaker = await readBreaker(user);
   const skipGmail = breaker !== null;
 
+  const sinceMs = statsSinceMs();
+
   try {
     const gmail = getGmail(client);
-    const [profile, list, decisions, team, mailCache, directory] =
+    const [profile, decisions, team, mailCache, directory, syncState] =
       await Promise.all([
         skipGmail
           ? Promise.resolve(null)
@@ -74,33 +83,53 @@ export async function GET(req: NextRequest) {
               await ledger.charge("getProfile");
               return res;
             }),
-        skipGmail
-          ? Promise.resolve({ data: {} as gmail_v1.Schema$ListMessagesResponse })
-          : ledger.afford("messages.list").then((ok) =>
-              ok
-                ? gmail.users.messages.list({
-                    userId: "me",
-                    q: `${LEAVE_MAIL_QUERY} after:${STATS_SINCE}`,
-                    maxResults: MAX_MESSAGES,
-                  })
-                : { data: {} as gmail_v1.Schema$ListMessagesResponse }
-            ),
         loadDecisions(user),
         loadTeam(user),
         loadMailCache(user),
         loadEmployees(),
+        loadSyncState(user, "stats"),
       ]);
 
     const selfEmail = profile?.data.emailAddress ?? "";
-    const ids = skipGmail
-      ? cachedIdsSince(mailCache.entries, statsSinceMs(), MAX_MESSAGES)
-      : [
+    const historyId = normalizeHistoryId(profile?.data.historyId);
+    const cachedIds = cachedIdsSince(mailCache.entries, sinceMs, MAX_MESSAGES);
+    const nowMs = Date.now();
+
+    const sync = skipGmail
+      ? { scan: false }
+      : await decideSync(
+          syncState,
+          { historyId, sinceMs, nowMs, cachedCount: cachedIds.length },
+          async (startHistoryId) => {
+            if (!(await ledger.afford("history.list"))) return null;
+            const probed = await gmail.users.history.list({
+              userId: "me",
+              startHistoryId,
+              historyTypes: ["messageAdded"],
+            });
+            return probed.data;
+          }
+        );
+
+    let list = { data: {} as gmail_v1.Schema$ListMessagesResponse };
+    if (sync.scan && (await ledger.afford("messages.list"))) {
+      list = await gmail.users.messages.list({
+        userId: "me",
+        q: `${LEAVE_MAIL_QUERY} after:${STATS_SINCE}`,
+        maxResults: MAX_MESSAGES,
+      });
+    }
+
+    const ids = sync.scan
+      ? [
           ...new Set(
             (list.data.messages ?? [])
               .map((m) => m.id)
               .filter((id): id is string => Boolean(id))
           ),
-        ];
+        ]
+      : cachedIds;
+    const capped = sync.scan && ids.length >= MAX_MESSAGES;
 
     const { missing } = partitionCached(ids, mailCache);
 
@@ -126,8 +155,10 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    let persisted = mailCache;
     if (cached > 0) {
-      await saveMailCache(user, pruneMailCache(mailCache, Date.now()));
+      persisted = pruneMailCache(mailCache, Date.now());
+      await saveMailCache(user, persisted);
     }
 
     const parsedRows = ids
@@ -230,6 +261,20 @@ export async function GET(req: NextRequest) {
         status: r.status,
       });
     }
+
+    const nextSync = syncStateToStore({
+      scanned: sync.scan,
+      skipped: skipGmail,
+      exhausted: ledger.exhausted,
+      capped,
+      ids,
+      cached: persisted.entries,
+      historyId,
+      sinceMs,
+      nowMs,
+      previous: syncState,
+    });
+    if (nextSync) await saveSyncState(user, "stats", nextSync);
 
     // Count only people on the manager's team (all, if no team is configured).
     return NextResponse.json({

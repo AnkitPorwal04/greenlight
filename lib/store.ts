@@ -5,10 +5,13 @@ import type { MailCache } from "./mail-cache";
 import { emptyDirectCache, readDirectCache } from "./direct-cache";
 import type { DirectCache } from "./direct-cache";
 import type { DirectClassification } from "./classify";
+import { readSyncState } from "./gmail-sync";
+import type { SyncScope, SyncState } from "./gmail-sync";
 import type { Decision } from "./types";
 
 export const CLASSIFICATION_TTL_SECONDS = 60 * 24 * 60 * 60;
 export const MAIL_CACHE_TTL_SECONDS = 400 * 24 * 60 * 60;
+export const SYNC_STATE_TTL_SECONDS = 7 * 24 * 60 * 60;
 export const MAX_DISMISSED = 500;
 
 function decisionsKey(email: string) {
@@ -41,6 +44,33 @@ function mailCacheKey(email: string) {
 
 function directCacheKey(email: string) {
   return `directcache:${email.toLowerCase()}`;
+}
+
+function syncStateKey(email: string, scope: SyncScope) {
+  return `gsync:${email.toLowerCase()}:${scope}`;
+}
+
+export async function loadSyncState(
+  email: string,
+  scope: SyncScope
+): Promise<SyncState | null> {
+  try {
+    return readSyncState(await getJSON<unknown>(syncStateKey(email, scope)));
+  } catch {
+    return null;
+  }
+}
+
+export async function saveSyncState(
+  email: string,
+  scope: SyncScope,
+  state: SyncState
+): Promise<void> {
+  try {
+    await setJSON(syncStateKey(email, scope), state, SYNC_STATE_TTL_SECONDS);
+  } catch {
+    return;
+  }
 }
 
 export async function loadDirectCache(email: string): Promise<DirectCache> {

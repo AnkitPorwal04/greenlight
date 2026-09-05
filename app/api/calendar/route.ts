@@ -5,9 +5,16 @@ import { parseLeaveMail, extractBodyText } from "@/lib/parser";
 import {
   loadDecisions,
   loadMailCache,
+  loadSyncState,
   saveMailCache,
+  saveSyncState,
   loadTeam,
 } from "@/lib/store";
+import {
+  decideSync,
+  normalizeHistoryId,
+  syncStateToStore,
+} from "@/lib/gmail-sync";
 import {
   cacheEntryFromParsed,
   partitionCached,
@@ -74,42 +81,67 @@ export async function GET(req: NextRequest) {
   const breaker = await readBreaker(user);
   const skipGmail = breaker !== null;
 
+  const sinceMs = since.getTime();
+
   try {
     const gmail = getGmail(client);
-    const [profile, listed, decisions, team, mailCache] = await Promise.all([
+    const [profile, decisions, team, mailCache, syncState] = await Promise.all([
       skipGmail
         ? Promise.resolve(null)
         : gmail.users.getProfile({ userId: "me" }).then(async (res) => {
             await ledger.charge("getProfile");
             return res;
           }),
-      collectMessageRefs(CALENDAR_MAX_MESSAGES, async (pageToken) => {
-        if (skipGmail) return { refs: [] };
-        if (!(await ledger.afford("messages.list"))) return { refs: [] };
-        const page = await gmail.users.messages.list({
-          userId: "me",
-          q: windowedQuery(LEAVE_MAIL_QUERY, since),
-          maxResults: GMAIL_PAGE_SIZE,
-          pageToken,
-        });
-        return {
-          refs: (page.data.messages ?? []).map((m) => ({ id: m.id ?? "" })),
-          nextPageToken: page.data.nextPageToken ?? undefined,
-        };
-      }),
       loadDecisions(user),
       loadTeam(user),
       loadMailCache(user),
+      loadSyncState(user, "calendar"),
     ]);
 
     const selfEmail = profile?.data.emailAddress ?? "";
-    const ids = skipGmail
-      ? cachedIdsSince(
-          mailCache.entries,
-          since.getTime(),
-          CALENDAR_MAX_MESSAGES
-        )
-      : [...new Set(listed.refs.map((r) => r.id).filter(Boolean))];
+    const historyId = normalizeHistoryId(profile?.data.historyId);
+    const cachedIds = cachedIdsSince(
+      mailCache.entries,
+      sinceMs,
+      CALENDAR_MAX_MESSAGES
+    );
+    const nowMs = Date.now();
+
+    const sync = skipGmail
+      ? { scan: false }
+      : await decideSync(
+          syncState,
+          { historyId, sinceMs, nowMs, cachedCount: cachedIds.length },
+          async (startHistoryId) => {
+            if (!(await ledger.afford("history.list"))) return null;
+            const probed = await gmail.users.history.list({
+              userId: "me",
+              startHistoryId,
+              historyTypes: ["messageAdded"],
+            });
+            return probed.data;
+          }
+        );
+
+    const listed = sync.scan
+      ? await collectMessageRefs(CALENDAR_MAX_MESSAGES, async (pageToken) => {
+          if (!(await ledger.afford("messages.list"))) return { refs: [] };
+          const page = await gmail.users.messages.list({
+            userId: "me",
+            q: windowedQuery(LEAVE_MAIL_QUERY, since),
+            maxResults: GMAIL_PAGE_SIZE,
+            pageToken,
+          });
+          return {
+            refs: (page.data.messages ?? []).map((m) => ({ id: m.id ?? "" })),
+            nextPageToken: page.data.nextPageToken ?? undefined,
+          };
+        })
+      : { refs: [], capped: false };
+
+    const ids = sync.scan
+      ? [...new Set(listed.refs.map((r) => r.id).filter(Boolean))]
+      : cachedIds;
 
     const { missing } = partitionCached(ids, mailCache);
 
@@ -136,8 +168,10 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    let persisted = mailCache;
     if (cached > 0) {
-      await saveMailCache(user, pruneMailCache(mailCache, Date.now()));
+      persisted = pruneMailCache(mailCache, Date.now());
+      await saveMailCache(user, persisted);
     }
 
     const rows = ids
@@ -177,6 +211,20 @@ export async function GET(req: NextRequest) {
         source: r.source,
         receivedAt: r.receivedAt,
       }));
+
+    const nextSync = syncStateToStore({
+      scanned: sync.scan,
+      skipped: skipGmail,
+      exhausted: ledger.exhausted,
+      capped: listed.capped,
+      ids,
+      cached: persisted.entries,
+      historyId,
+      sinceMs,
+      nowMs,
+      previous: syncState,
+    });
+    if (nextSync) await saveSyncState(user, "calendar", nextSync);
 
     const leaves = toCalendarLeaves(
       dedupeLeaves(filterByTeam([...rows, ...directRows], team))

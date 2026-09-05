@@ -5,9 +5,16 @@ import { parseLeaveMail, extractBodyText } from "@/lib/parser";
 import {
   loadDecisions,
   loadMailCache,
+  loadSyncState,
   saveMailCache,
+  saveSyncState,
   loadTeam,
 } from "@/lib/store";
+import {
+  decideSync,
+  normalizeHistoryId,
+  syncStateToStore,
+} from "@/lib/gmail-sync";
 import {
   buildLeaveRequest,
   cacheEntryFromParsed,
@@ -73,9 +80,11 @@ export async function GET(req: NextRequest) {
   const breaker = await readBreaker(user);
   const skipGmail = breaker !== null;
 
+  const sinceMs = since.getTime();
+
   try {
     const gmail = getGmail(client);
-    const [profile, listed, decisions, employees, team, mailCache] =
+    const [profile, decisions, employees, team, mailCache, syncState] =
       await Promise.all([
         skipGmail
           ? Promise.resolve(null)
@@ -83,8 +92,40 @@ export async function GET(req: NextRequest) {
               await ledger.charge("getProfile");
               return res;
             }),
-        collectMessageRefs(HISTORY_MAX_MESSAGES, async (pageToken) => {
-          if (skipGmail) return { refs: [] };
+        loadDecisions(user),
+        loadEmployees(),
+        loadTeam(user),
+        loadMailCache(user),
+        loadSyncState(user, "history"),
+      ]);
+
+    const selfEmail = profile?.data.emailAddress ?? "";
+    const historyId = normalizeHistoryId(profile?.data.historyId);
+    const cachedIds = cachedIdsSince(
+      mailCache.entries,
+      sinceMs,
+      HISTORY_MAX_MESSAGES
+    );
+    const nowMs = Date.now();
+
+    const sync = skipGmail
+      ? { scan: false }
+      : await decideSync(
+          syncState,
+          { historyId, sinceMs, nowMs, cachedCount: cachedIds.length },
+          async (startHistoryId) => {
+            if (!(await ledger.afford("history.list"))) return null;
+            const probed = await gmail.users.history.list({
+              userId: "me",
+              startHistoryId,
+              historyTypes: ["messageAdded"],
+            });
+            return probed.data;
+          }
+        );
+
+    const listed = sync.scan
+      ? await collectMessageRefs(HISTORY_MAX_MESSAGES, async (pageToken) => {
           if (!(await ledger.afford("messages.list"))) return { refs: [] };
           const page = await gmail.users.messages.list({
             userId: "me",
@@ -96,17 +137,10 @@ export async function GET(req: NextRequest) {
             refs: (page.data.messages ?? []).map((m) => ({ id: m.id ?? "" })),
             nextPageToken: page.data.nextPageToken ?? undefined,
           };
-        }),
-        loadDecisions(user),
-        loadEmployees(),
-        loadTeam(user),
-        loadMailCache(user),
-      ]);
+        })
+      : { refs: [], capped: false };
 
-    const selfEmail = profile?.data.emailAddress ?? "";
-    const ids = skipGmail
-      ? cachedIdsSince(mailCache.entries, since.getTime(), HISTORY_MAX_MESSAGES)
-      : listed.refs.map((r) => r.id);
+    const ids = sync.scan ? listed.refs.map((r) => r.id) : cachedIds;
     const { missing } = partitionCached(ids, mailCache);
 
     let cached = 0;
@@ -131,8 +165,10 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    let persisted = mailCache;
     if (cached > 0) {
-      await saveMailCache(user, pruneMailCache(mailCache, Date.now()));
+      persisted = pruneMailCache(mailCache, Date.now());
+      await saveMailCache(user, persisted);
     }
 
     const requests: LeaveRequest[] = [];
@@ -152,6 +188,20 @@ export async function GET(req: NextRequest) {
           skipIds: new Set(ids),
           ledger,
         });
+
+    const nextSync = syncStateToStore({
+      scanned: sync.scan,
+      skipped: skipGmail,
+      exhausted: ledger.exhausted,
+      capped: listed.capped,
+      ids,
+      cached: persisted.entries,
+      historyId,
+      sinceMs,
+      nowMs,
+      previous: syncState,
+    });
+    if (nextSync) await saveSyncState(user, "history", nextSync);
 
     // Show only people on the manager's team (all, if no team is configured).
     const visible = [...filterByTeam(requests, team), ...direct];
