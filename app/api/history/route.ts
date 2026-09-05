@@ -18,6 +18,8 @@ import { loadEmployees } from "@/lib/employees";
 import { filterByTeam } from "@/lib/team";
 import { checkRateLimit, REFETCH } from "@/lib/rate-limit";
 import { createLedger } from "@/lib/quota";
+import { noteGmailFailure, readBreaker } from "@/lib/gmail-breaker";
+import { cachedIdsSince } from "@/lib/cached-window";
 import { fetchDirectRequests } from "@/lib/direct-fetch";
 import { gmailAfterDate, historyMonthCount, monthStart } from "@/lib/history";
 import {
@@ -68,16 +70,21 @@ export async function GET(req: NextRequest) {
   }
 
   const ledger = createLedger(user);
+  const breaker = await readBreaker(user);
+  const skipGmail = breaker !== null;
 
   try {
     const gmail = getGmail(client);
     const [profile, listed, decisions, employees, team, mailCache] =
       await Promise.all([
-        gmail.users.getProfile({ userId: "me" }).then(async (res) => {
-          await ledger.charge("getProfile");
-          return res;
-        }),
+        skipGmail
+          ? Promise.resolve(null)
+          : gmail.users.getProfile({ userId: "me" }).then(async (res) => {
+              await ledger.charge("getProfile");
+              return res;
+            }),
         collectMessageRefs(HISTORY_MAX_MESSAGES, async (pageToken) => {
+          if (skipGmail) return { refs: [] };
           if (!(await ledger.afford("messages.list"))) return { refs: [] };
           const page = await gmail.users.messages.list({
             userId: "me",
@@ -96,8 +103,10 @@ export async function GET(req: NextRequest) {
         loadMailCache(user),
       ]);
 
-    const selfEmail = profile.data.emailAddress ?? "";
-    const ids = listed.refs.map((r) => r.id);
+    const selfEmail = profile?.data.emailAddress ?? "";
+    const ids = skipGmail
+      ? cachedIdsSince(mailCache.entries, since.getTime(), HISTORY_MAX_MESSAGES)
+      : listed.refs.map((r) => r.id);
     const { missing } = partitionCached(ids, mailCache);
 
     let cached = 0;
@@ -134,12 +143,15 @@ export async function GET(req: NextRequest) {
       if (request) requests.push(request);
     }
 
-    const direct = await fetchDirectRequests(
-      gmail,
-      user,
-      gmailAfterDate(since),
-      { selfEmail, team, decisions, skipIds: new Set(ids), ledger }
-    );
+    const direct = skipGmail
+      ? []
+      : await fetchDirectRequests(gmail, user, gmailAfterDate(since), {
+          selfEmail,
+          team,
+          decisions,
+          skipIds: new Set(ids),
+          ledger,
+        });
 
     // Show only people on the manager's team (all, if no team is configured).
     const visible = [...filterByTeam(requests, team), ...direct];
@@ -154,11 +166,25 @@ export async function GET(req: NextRequest) {
       months,
       since: since.toISOString(),
       capped: listed.capped,
-      ...(ledger.exhausted
-        ? { partial: true as const, retryAtMs: ledger.resetAtMs }
-        : {}),
+      ...(breaker
+        ? { partial: true as const, retryAtMs: breaker.retryAt }
+        : ledger.exhausted
+          ? { partial: true as const, retryAtMs: ledger.resetAtMs }
+          : {}),
     });
   } catch (e) {
+    const tripped = await noteGmailFailure(user, e);
+    if (tripped) {
+      return NextResponse.json({
+        requests: [],
+        selfEmail: "",
+        months,
+        since: since.toISOString(),
+        capped: false,
+        partial: true as const,
+        retryAtMs: tripped.retryAt,
+      });
+    }
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "gmail_error" },
       { status: 500 }

@@ -9,6 +9,7 @@ import { managerDisplayName } from "@/lib/team-name";
 import { gmailAfterDate, monthStart } from "@/lib/history";
 import { LEAVE_MAIL_QUERY } from "@/lib/gmail-window";
 import { createLedger } from "@/lib/quota";
+import { noteGmailFailure, readBreaker } from "@/lib/gmail-breaker";
 
 export const dynamic = "force-dynamic";
 
@@ -49,29 +50,35 @@ export async function GET(req: NextRequest) {
   const since = monthStart(new Date(), DISCOVER_MONTHS - 1);
 
   const ledger = createLedger(user);
+  const breaker = await readBreaker(user);
+  const skipGmail = breaker !== null;
 
   try {
     const gmail = getGmail(client);
     const [profile, list, team, teamName, employees] = await Promise.all([
-      gmail.users.getProfile({ userId: "me" }).then(async (res) => {
-        await ledger.charge("getProfile");
-        return res;
-      }),
-      ledger.afford("messages.list").then((ok) =>
-        ok
-          ? gmail.users.messages.list({
-              userId: "me",
-              q: `${LEAVE_MAIL_QUERY} after:${gmailAfterDate(since)}`,
-              maxResults: MAX_MESSAGES,
-            })
-          : { data: {} as gmail_v1.Schema$ListMessagesResponse }
-      ),
+      skipGmail
+        ? Promise.resolve(null)
+        : gmail.users.getProfile({ userId: "me" }).then(async (res) => {
+            await ledger.charge("getProfile");
+            return res;
+          }),
+      skipGmail
+        ? Promise.resolve({ data: {} as gmail_v1.Schema$ListMessagesResponse })
+        : ledger.afford("messages.list").then((ok) =>
+            ok
+              ? gmail.users.messages.list({
+                  userId: "me",
+                  q: `${LEAVE_MAIL_QUERY} after:${gmailAfterDate(since)}`,
+                  maxResults: MAX_MESSAGES,
+                })
+              : { data: {} as gmail_v1.Schema$ListMessagesResponse }
+          ),
       loadTeam(user),
       loadTeamName(user),
       loadEmployees(),
     ]);
 
-    const selfEmail = profile.data.emailAddress ?? "";
+    const selfEmail = profile?.data.emailAddress ?? "";
     const ids = [
       ...new Set(
         (list.data.messages ?? [])
@@ -147,11 +154,14 @@ export async function GET(req: NextRequest) {
       teamName,
       discovered,
       manager,
-      ...(ledger.exhausted
-        ? { partial: true as const, retryAtMs: ledger.resetAtMs }
-        : {}),
+      ...(breaker
+        ? { partial: true as const, retryAtMs: breaker.retryAt }
+        : ledger.exhausted
+          ? { partial: true as const, retryAtMs: ledger.resetAtMs }
+          : {}),
     });
   } catch (e) {
+    await noteGmailFailure(user, e);
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "gmail_error" },
       { status: 500 }

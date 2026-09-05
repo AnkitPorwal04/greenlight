@@ -1,6 +1,7 @@
 import { OAuth2Client, Credentials } from "google-auth-library";
 import { gmail, gmail_v1 } from "@googleapis/gmail";
 import { getJSON, setJSON, delKey } from "./storage";
+import { readGmailLimit } from "./gmail-breaker";
 
 function tokensKey(email: string) {
   return `gmail_tokens:${email.toLowerCase()}`;
@@ -54,6 +55,48 @@ export async function getAuthorizedClient(
   return client;
 }
 
+export const GMAIL_RETRY_TOTAL_TIMEOUT_MS = 20_000;
+export const GMAIL_MAX_RETRY_DELAY_MS = 8_000;
+export const GMAIL_RETRIES = 2;
+
+export function shouldRetryGmail(err: unknown): boolean {
+  const limit = readGmailLimit(err);
+  if (!limit) return false;
+  return limit.kind === "rate";
+}
+
+export function gmailRetryConfig() {
+  return {
+    retry: GMAIL_RETRIES,
+    retryDelay: 250,
+    retryDelayMultiplier: 2,
+    maxRetryDelay: GMAIL_MAX_RETRY_DELAY_MS,
+    totalTimeout: GMAIL_RETRY_TOTAL_TIMEOUT_MS,
+    statusCodesToRetry: [
+      [408, 408],
+      [429, 429],
+      [500, 599],
+    ],
+    shouldRetry(err: unknown) {
+      const e = err as { config?: { retryConfig?: { currentRetryAttempt?: number } } };
+      const attempt = e?.config?.retryConfig?.currentRetryAttempt ?? 0;
+      if (attempt >= GMAIL_RETRIES) return false;
+
+      const limit = readGmailLimit(err);
+      if (limit) return limit.kind === "rate";
+
+      const status = (err as { response?: { status?: number } })?.response
+        ?.status;
+      if (typeof status !== "number") return false;
+      return status === 408 || status === 429 || (status >= 500 && status < 600);
+    },
+  };
+}
+
 export function getGmail(client: OAuth2Client): gmail_v1.Gmail {
-  return gmail({ version: "v1", auth: client });
+  return gmail({
+    version: "v1",
+    auth: client,
+    retryConfig: gmailRetryConfig(),
+  });
 }
