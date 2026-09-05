@@ -30,8 +30,13 @@ import {
   GMAIL_PAGE_SIZE,
   LEAVES_MAX_MESSAGES,
   LEAVE_MAIL_QUERY,
+  SENT_MAIL_QUERY,
+  SENT_PROBE_MAX_MESSAGES,
 } from "@/lib/gmail-window";
-import { replyCoversApplication } from "@/lib/thread-reply";
+import {
+  replyCoversApplication,
+  threadsWorthFetching,
+} from "@/lib/thread-reply";
 import type { Decision, LeaveRequest } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -172,13 +177,40 @@ export async function GET(req: NextRequest) {
     const undecided = requests.filter(
       (r) => r.status === "pending" && !noAuto.has(r.id) && r.threadId,
     );
-    await loadThreads(
-      gmail,
-      [...new Set(undecided.map((r) => r.threadId))].filter(
-        (tid) => !threads.has(tid),
-      ),
-      threads,
-    );
+    if (undecided.length > 0) {
+      const sent = await collectMessageRefs(
+        SENT_PROBE_MAX_MESSAGES,
+        async (pageToken) => {
+          const page = await gmail.users.messages.list({
+            userId: "me",
+            q: windowedQuery(SENT_MAIL_QUERY, since),
+            maxResults: GMAIL_PAGE_SIZE,
+            pageToken,
+          });
+          return {
+            refs: (page.data.messages ?? []).map((m) => ({
+              id: m.id ?? "",
+              threadId: m.threadId ?? undefined,
+            })),
+            nextPageToken: page.data.nextPageToken ?? undefined,
+          };
+        },
+      );
+      const repliedThreads = new Set(
+        sent.refs
+          .map((r) => r.threadId)
+          .filter((tid): tid is string => Boolean(tid)),
+      );
+      await loadThreads(
+        gmail,
+        threadsWorthFetching(
+          undecided.map((r) => r.threadId),
+          repliedThreads,
+          new Set(threads.keys()),
+        ),
+        threads,
+      );
+    }
 
     for (const request of undecided) {
       const thread = threads.get(request.threadId);

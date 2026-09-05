@@ -49,6 +49,23 @@ function fromAddress(msg: ThreadMessage): string {
   return headerValue(msg, "from").toLowerCase();
 }
 
+export function threadsWorthFetching(
+  pendingThreadIds: (string | undefined)[],
+  repliedThreadIds: Set<string>,
+  alreadyLoaded: Set<string>,
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const id of pendingThreadIds) {
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    if (alreadyLoaded.has(id)) continue;
+    if (!repliedThreadIds.has(id)) continue;
+    out.push(id);
+  }
+  return out;
+}
+
 export function replyCoversApplication(scope: ReplyScope): boolean {
   const self = scope.selfEmail.trim().toLowerCase();
   if (!self) return false;
