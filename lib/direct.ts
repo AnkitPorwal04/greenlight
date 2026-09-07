@@ -1,5 +1,9 @@
 import { EMAIL_RE } from "./email";
-import { formatLeaveDate, inclusiveDayCount } from "./leave-dates";
+import {
+  formatLeaveDate,
+  inclusiveDayCount,
+  isPlausibleLeaveDate,
+} from "./leave-dates";
 import { isUnclassifiable, UNCLASSIFIABLE } from "./classify";
 import type { DirectClassification } from "./classify";
 import type { Decision, LeaveRequest } from "./types";
@@ -103,7 +107,10 @@ export function classificationToRequest(
 
   const fromYmd = answer.fromDate;
   const toYmd = answer.toDate ?? fromYmd;
-  const dated = Boolean(fromYmd && toYmd);
+  const dated =
+    Boolean(fromYmd && toYmd) &&
+    isPlausibleLeaveDate(fromYmd!, mail.receivedAt) &&
+    isPlausibleLeaveDate(toYmd!, mail.receivedAt);
 
   const needsReview =
     unclear || !dated || answer.confidence < DIRECT_CONFIDENT;
