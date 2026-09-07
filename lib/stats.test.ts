@@ -781,6 +781,106 @@ describe("buildStatsMonths", () => {
       { key: "2026-08", label: "August 2026", count: 1 },
     ]);
   });
+
+  it("never mints a month tab years away from the mail that asked for it", () => {
+    const months = buildStatsMonths(
+      [
+        entry({
+          id: "hallucinated",
+          fromDate: "12 Aug 2025",
+          toDate: "12 Aug 2025",
+          receivedAt: "2026-08-31T09:00:00.000Z",
+        }),
+      ],
+      now
+    );
+
+    expect(months.map((m) => m.key)).toEqual(["2026-09", "2026-08"]);
+  });
+
+  it("keeps a month tab for leave booked a long way ahead", () => {
+    const months = buildStatsMonths(
+      [
+        entry({
+          id: "longlead",
+          fromDate: "11 Jan 2027",
+          toDate: "15 Jan 2027",
+          receivedAt: "2026-08-20T09:00:00.000Z",
+        }),
+      ],
+      now
+    );
+
+    expect(months.map((m) => m.key)).toEqual(["2027-01", "2026-09"]);
+  });
+
+  it("keeps a month tab for leave filed after it was taken", () => {
+    const months = buildStatsMonths(
+      [
+        entry({
+          id: "backdated",
+          fromDate: "20 Jul 2026",
+          toDate: "21 Jul 2026",
+          receivedAt: "2026-08-20T09:00:00.000Z",
+        }),
+      ],
+      now
+    );
+
+    expect(months.map((m) => m.key)).toEqual(["2026-09", "2026-07"]);
+  });
+
+  it("holds the month tab bounds exactly where the constants put them", () => {
+    const at = (fromDate: string) =>
+      buildStatsMonths(
+        [
+          entry({
+            id: "edge",
+            fromDate,
+            toDate: fromDate,
+            receivedAt: "2026-08-31T09:00:00.000Z",
+          }),
+        ],
+        now
+      ).map((m) => m.key);
+
+    expect(at("01 May 2026")).toEqual(["2026-09", "2026-05"]);
+    expect(at("30 Apr 2026")).toEqual(["2026-09", "2026-08"]);
+    expect(at("31 Aug 2027")).toEqual(["2027-08", "2026-09"]);
+    expect(at("01 Sep 2027")).toEqual(["2026-09", "2026-08"]);
+  });
+
+  it("buckets a part-believable span by arrival rather than half inventing it", () => {
+    const months = buildStatsMonths(
+      [
+        entry({
+          id: "straddles",
+          fromDate: "20 Mar 2026",
+          toDate: "05 Sep 2026",
+          receivedAt: "2026-08-31T09:00:00.000Z",
+        }),
+      ],
+      now
+    );
+
+    expect(months.map((m) => m.key)).toEqual(["2026-09", "2026-08"]);
+  });
+
+  it("leaves a far-off month alone when the mail has no usable timestamp", () => {
+    const months = buildStatsMonths(
+      [
+        entry({
+          id: "noclock",
+          fromDate: "12 Aug 2025",
+          toDate: "12 Aug 2025",
+          receivedAt: "not a date",
+        }),
+      ],
+      now
+    );
+
+    expect(months.map((m) => m.key)).toEqual(["2026-09", "2025-08"]);
+  });
 });
 
 describe("entriesInMonth", () => {
