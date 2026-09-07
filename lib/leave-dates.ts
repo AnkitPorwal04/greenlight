@@ -78,6 +78,36 @@ export function isValidYmd(value: string): boolean {
   return isRealDate(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
+export const LEAVE_PLAUSIBLE_MONTHS_BACK = 3;
+export const LEAVE_PLAUSIBLE_MONTHS_AHEAD = 12;
+
+function monthIndexOfYmd(value: string): number | null {
+  const m = value?.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  return Number(m[1]) * 12 + (Number(m[2]) - 1);
+}
+
+function monthIndexOfInstant(value: string): number | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime())) return null;
+  return at.getUTCFullYear() * 12 + at.getUTCMonth();
+}
+
+export function isPlausibleLeaveDate(ymd: string, receivedAt: string): boolean {
+  const received = monthIndexOfInstant(receivedAt);
+  if (received === null) return true;
+
+  const leave = monthIndexOfYmd(ymd);
+  if (leave === null) return true;
+
+  const delta = leave - received;
+  return (
+    delta >= -LEAVE_PLAUSIBLE_MONTHS_BACK &&
+    delta <= LEAVE_PLAUSIBLE_MONTHS_AHEAD
+  );
+}
+
 /**
  * True when a leave running fromYmd..toYmd (inclusive) covers dayYmd.
  * Order-tolerant: swaps the ends if they arrive reversed.

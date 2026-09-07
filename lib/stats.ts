@@ -2,6 +2,7 @@ import type { LeaveStatus } from "./types";
 import { filterByTeam, teamCode } from "./team";
 import {
   addDaysYmd,
+  isPlausibleLeaveDate,
   isValidYmd,
   leaveCoversDay,
   parseLeaveDate,
@@ -159,7 +160,11 @@ function coveredDays(entry: StatsEntry): string[] {
 
 function entryMonthKeys(entry: StatsEntry): string[] {
   const days = coveredDays(entry);
-  if (days.length === 0) {
+  const usable =
+    days.length > 0 &&
+    days.every((day) => isPlausibleLeaveDate(day, entry.receivedAt));
+
+  if (!usable) {
     const fallback = statsMonthKey(entry.receivedAt);
     return fallback ? [fallback] : [];
   }

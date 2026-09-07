@@ -332,14 +332,26 @@ describe("classificationToRequest", () => {
     ).toBe("Hi, taking Thursday off for a family function.");
   });
 
-  it("caps an absurd date span", () => {
+  it("caps a long but believable date span", () => {
     expect(
       classificationToRequest(
         mail,
         person,
-        classification({ fromDate: "2026-01-01", toDate: "2099-01-01" })
+        classification({ fromDate: "2026-06-01", toDate: "2027-09-30" })
       )!.numberOfDays
     ).toBe(365);
+  });
+
+  it("sends an absurd date span to review instead of capping it", () => {
+    const r = classificationToRequest(
+      mail,
+      person,
+      classification({ fromDate: "2026-01-01", toDate: "2099-01-01" })
+    )!;
+
+    expect(r.numberOfDays).toBe(1);
+    expect(r.fromDate).toBe("");
+    expect(r.needsReview).toBe(true);
   });
 });
 
@@ -429,6 +441,96 @@ describe("classificationToRequest, unclassifiable mail", () => {
     expect(
       classificationToRequest(mail, person, classification())!.needsReview
     ).toBe(false);
+  });
+});
+
+describe("classificationToRequest, implausible extracted dates", () => {
+  const hallucinated = classification({
+    confidence: 0.99,
+    fromDate: "2025-08-12",
+    toDate: "2025-08-12",
+  });
+
+  it("treats a year the model invented as no date at all", () => {
+    const r = classificationToRequest(mail, person, hallucinated)!;
+
+    expect(r.fromDate).toBe("");
+    expect(r.toDate).toBe("");
+    expect(r.numberOfDays).toBe(1);
+    expect(r.needsReview).toBe(true);
+  });
+
+  it("still shows the request on the dashboard as a decidable direct row", () => {
+    const r = classificationToRequest(mail, person, hallucinated)!;
+
+    expect(r.id).toBe("msg1");
+    expect(r.source).toBe("direct");
+    expect(r.employeeName).toBe("Jane Doe");
+    expect(r.employeeCode).toBe("GRP1234");
+    expect(r.reason).toBe("Leave on Thursday");
+    expect(r.status).toBe("pending");
+    expect(r.emailVerified).toBe(true);
+    expect(r.ccRecipients).toEqual(["hr@example.com"]);
+  });
+
+  it("refuses to salvage a span when only one end is implausible", () => {
+    const startsInThePast = classificationToRequest(
+      mail,
+      person,
+      classification({ fromDate: "2025-08-12", toDate: "2026-09-12" })
+    )!;
+    const endsFarAhead = classificationToRequest(
+      mail,
+      person,
+      classification({ fromDate: "2026-09-10", toDate: "2030-01-01" })
+    )!;
+
+    expect(startsInThePast.fromDate).toBe("");
+    expect(startsInThePast.toDate).toBe("");
+    expect(startsInThePast.needsReview).toBe(true);
+    expect(endsFarAhead.fromDate).toBe("");
+    expect(endsFarAhead.toDate).toBe("");
+    expect(endsFarAhead.needsReview).toBe(true);
+  });
+
+  it("keeps a genuinely long-lead booking and a genuinely late filing", () => {
+    const longLead = classificationToRequest(
+      mail,
+      person,
+      classification({ fromDate: "2027-01-11", toDate: "2027-01-15" })
+    )!;
+    const backdated = classificationToRequest(
+      mail,
+      person,
+      classification({ fromDate: "2026-07-20", toDate: "2026-07-21" })
+    )!;
+
+    expect(longLead.fromDate).toBe("11 Jan 2027");
+    expect(longLead.needsReview).toBe(false);
+    expect(backdated.fromDate).toBe("20 Jul 2026");
+    expect(backdated.needsReview).toBe(false);
+  });
+
+  it("does not blank a date just because the mail's own timestamp is broken", () => {
+    const r = classificationToRequest(
+      { ...mail, receivedAt: "not a date" },
+      person,
+      classification()
+    )!;
+
+    expect(r.fromDate).toBe("10 Sep 2026");
+    expect(r.toDate).toBe("12 Sep 2026");
+    expect(r.needsReview).toBe(false);
+  });
+
+  it("still reaches the manager even when the manager already decided it", () => {
+    const decided = withDecision(
+      classificationToRequest(mail, person, hallucinated)!,
+      { status: "approved", decidedAt: "2026-09-05T09:00:00.000Z" }
+    );
+
+    expect(decided.fromDate).toBe("");
+    expect(decided.numberOfDays).toBe(1);
   });
 });
 
