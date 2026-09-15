@@ -586,6 +586,16 @@ describe("presentOnDay", () => {
     expect(day.outCount).toBe(0);
   });
 
+  it("keeps the first spelling when a roster code repeats under two names", () => {
+    const roster = [
+      { code: "EMP1", name: "Asha Nair" },
+      { code: "emp1", name: "A. Nair" },
+    ];
+    const day = presentOnDay(roster, sections());
+    expect(day.present).toEqual([{ code: "EMP1", name: "Asha Nair" }]);
+    expect(day.inCount).toBe(1);
+  });
+
   it("skips a roster row with a blank code", () => {
     const roster = [
       { code: "", name: "Ghost" },
