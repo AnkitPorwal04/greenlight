@@ -107,8 +107,8 @@ export interface CalendarRosterMember {
 
 export interface DayPresence {
   present: CalendarRosterMember[];
-  inCount: number;
-  outCount: number;
+  wfh: CalendarRosterMember[];
+  absent: CalendarRosterMember[];
 }
 
 function byMemberName(
@@ -116,6 +116,14 @@ function byMemberName(
   b: CalendarRosterMember
 ): number {
   return a.name.localeCompare(b.name);
+}
+
+export function isWorkFromHome(leaveType: string): boolean {
+  const type = (typeof leaveType === "string" ? leaveType : "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+  return type === "wfh" || type.includes("work from home");
 }
 
 export function presentOnDay(
@@ -130,21 +138,31 @@ export function presentOnDay(
     members.set(code, { code, name: name || code });
   }
 
-  if (members.size === 0) return { present: [], inCount: 0, outCount: 0 };
+  if (members.size === 0) return { present: [], wfh: [], absent: [] };
 
-  const away = new Set<string>();
+  const allFromHome = new Map<string, boolean>();
   for (const leave of [...sections.approved, ...sections.pending]) {
     const code = teamCode(leave.employeeCode);
-    if (code && members.has(code)) away.add(code);
+    if (!code || !members.has(code)) continue;
+    const sofar = allFromHome.get(code) ?? true;
+    allFromHome.set(code, sofar && isWorkFromHome(leave.leaveType));
   }
 
   const present: CalendarRosterMember[] = [];
+  const wfh: CalendarRosterMember[] = [];
+  const absent: CalendarRosterMember[] = [];
   for (const [code, member] of members) {
-    if (!away.has(code)) present.push(member);
+    const fromHome = allFromHome.get(code);
+    if (fromHome === undefined) present.push(member);
+    else if (fromHome) wfh.push(member);
+    else absent.push(member);
   }
-  present.sort(byMemberName);
 
-  return { present, inCount: present.length, outCount: away.size };
+  present.sort(byMemberName);
+  wfh.sort(byMemberName);
+  absent.sort(byMemberName);
+
+  return { present, wfh, absent };
 }
 
 export function toCalendarLeaves(rows: CalendarCandidate[]): CalendarLeave[] {
