@@ -1,5 +1,6 @@
 import { leaveCoversDay, parseLeaveDate } from "./leave-dates";
 import { cancelledLeaveTimes, isLeaveCancelled } from "./cancellation";
+import { teamCode } from "./team";
 import type { LeaveStatus } from "./types";
 
 export interface CalendarLeave {
@@ -97,6 +98,53 @@ export function splitDayLeaves(
   approved.sort(byEmployeeName);
   pending.sort(byEmployeeName);
   return { approved, pending, total: approved.length + pending.length };
+}
+
+export interface CalendarRosterMember {
+  code: string;
+  name: string;
+}
+
+export interface DayPresence {
+  present: CalendarRosterMember[];
+  inCount: number;
+  outCount: number;
+}
+
+function byMemberName(
+  a: CalendarRosterMember,
+  b: CalendarRosterMember
+): number {
+  return a.name.localeCompare(b.name);
+}
+
+export function presentOnDay(
+  roster: CalendarRosterMember[],
+  sections: DayLeaveSections
+): DayPresence {
+  const members = new Map<string, CalendarRosterMember>();
+  for (const member of Array.isArray(roster) ? roster : []) {
+    const code = teamCode(member?.code);
+    if (!code || members.has(code)) continue;
+    const name = typeof member.name === "string" ? member.name.trim() : "";
+    members.set(code, { code, name: name || code });
+  }
+
+  if (members.size === 0) return { present: [], inCount: 0, outCount: 0 };
+
+  const away = new Set<string>();
+  for (const leave of [...sections.approved, ...sections.pending]) {
+    const code = teamCode(leave.employeeCode);
+    if (code && members.has(code)) away.add(code);
+  }
+
+  const present: CalendarRosterMember[] = [];
+  for (const [code, member] of members) {
+    if (!away.has(code)) present.push(member);
+  }
+  present.sort(byMemberName);
+
+  return { present, inCount: present.length, outCount: away.size };
 }
 
 export function toCalendarLeaves(rows: CalendarCandidate[]): CalendarLeave[] {
