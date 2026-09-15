@@ -295,6 +295,12 @@ html.light .accent:hover {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--signal-red) 18%, transparent);
 }
 
+.lamp-sky {
+  --lamp-hue: var(--c-sky);
+  background: var(--c-sky);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-sky) 18%, transparent);
+}
+
 .lamp-breathe {
   animation: lamp-breathe 2.6s ease-in-out infinite;
 }

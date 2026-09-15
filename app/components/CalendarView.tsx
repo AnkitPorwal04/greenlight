@@ -85,49 +85,84 @@ function DaySection({
   );
 }
 
+type PresenceBucket = "present" | "wfh" | "absent";
+
+const PRESENCE_TABS: {
+  key: PresenceBucket;
+  label: string;
+  lamp: string;
+  empty: string;
+}[] = [
+  {
+    key: "present",
+    label: "Present",
+    lamp: "lamp-green",
+    empty: "No one on your team is at work that day.",
+  },
+  {
+    key: "wfh",
+    label: "WFH",
+    lamp: "lamp-sky",
+    empty: "No one is working from home that day.",
+  },
+  {
+    key: "absent",
+    label: "Absent",
+    lamp: "lamp-amber",
+    empty: "No one on your team is away that day.",
+  },
+];
+
 function OnDutyPanel({ presence }: { presence: DayPresence }) {
+  const [bucket, setBucket] = useState<PresenceBucket>("present");
+  const active = PRESENCE_TABS.find((t) => t.key === bucket) ?? PRESENCE_TABS[0];
+  const people = presence[active.key];
+
   return (
     <section className="lg:self-start">
       <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-4 py-3">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-[var(--border)] pb-2.5">
-          <h3 className="text-[10px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
-            On duty
-          </h3>
-          <span className="flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-[var(--text-secondary)]">
-            <span
-              aria-hidden="true"
-              className="lamp-dot h-[5px] w-[5px] shrink-0 lamp-green"
-            />
-            {presence.present.length} in
-            <span className="text-[var(--text-muted)]">·</span>
-            <span
-              aria-hidden="true"
-              className="lamp-dot h-[5px] w-[5px] shrink-0 lamp-amber"
-            />
-            {presence.wfh.length + presence.absent.length} out
-          </span>
+        <h3 className="text-[10px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
+          Team
+        </h3>
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-1 gap-y-1 border-b border-[var(--border)] pb-2.5">
+          {PRESENCE_TABS.map((tab) => {
+            const selected = tab.key === active.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setBucket(tab.key)}
+                aria-pressed={selected}
+                className={`press inline-flex items-center gap-1.5 rounded px-1.5 py-1 text-[11px] transition ${
+                  selected
+                    ? "bg-[var(--surface)] font-semibold text-[var(--text-primary)]"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                }`}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`lamp-dot h-[5px] w-[5px] shrink-0 ${tab.lamp}`}
+                />
+                {tab.label}
+                <span className="font-mono tabular-nums">
+                  {presence[tab.key].length}
+                </span>
+              </button>
+            );
+          })}
         </div>
-        {presence.present.length === 0 ? (
+        {people.length === 0 ? (
           <p className="py-4 text-center text-[12px] text-[var(--text-muted)]">
-            No one is on duty that day.
+            {active.empty}
           </p>
         ) : (
-          <ul className="divide-y divide-[var(--border)]">
-            {presence.present.map((member) => (
-              <li key={member.code} className="flex items-center gap-2.5 py-2">
-                <span
-                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold ${avatarTone(
-                    member.name
-                  )}`}
-                >
-                  {initials(member.name)}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--text-primary)]">
-                  {member.name}
-                </span>
-                <span className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
-                  {member.code}
-                </span>
+          <ul className="flex flex-wrap gap-1.5 pt-2.5">
+            {people.map((member) => (
+              <li
+                key={member.code}
+                className="inline-flex max-w-full items-center rounded border border-[var(--border-strong)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)]"
+              >
+                <span className="truncate">{member.name}</span>
               </li>
             ))}
           </ul>
