@@ -27,6 +27,8 @@ import { noteGmailFailure, readBreaker } from "@/lib/gmail-breaker";
 import { cachedIdsSince, resolveWindowRefs } from "@/lib/cached-window";
 import { gmailAfterDate } from "@/lib/history";
 import { toCalendarLeaves } from "@/lib/calendar";
+import { teamRoster } from "@/lib/stats";
+import { loadEmployees } from "@/lib/employees";
 import { fetchDirectRequests } from "@/lib/direct-fetch";
 import { dedupeLeaves } from "@/lib/dedupe";
 import {
@@ -37,7 +39,7 @@ import {
   GMAIL_PAGE_SIZE,
   LEAVE_MAIL_QUERY,
 } from "@/lib/gmail-window";
-import type { CalendarCandidate } from "@/lib/calendar";
+import type { CalendarCandidate, CalendarRosterMember } from "@/lib/calendar";
 import type { DedupableRow } from "@/lib/dedupe";
 
 export const dynamic = "force-dynamic";
@@ -83,20 +85,26 @@ export async function GET(req: NextRequest) {
 
   const sinceMs = since.getTime();
 
+  let roster: CalendarRosterMember[] = [];
+
   try {
     const gmail = getGmail(client);
-    const [profile, decisions, team, mailCache, syncState] = await Promise.all([
-      skipGmail
-        ? Promise.resolve(null)
-        : gmail.users.getProfile({ userId: "me" }).then(async (res) => {
-            await ledger.charge("getProfile");
-            return res;
-          }),
-      loadDecisions(user),
-      loadTeam(user),
-      loadMailCache(user),
-      loadSyncState(user, "calendar"),
-    ]);
+    const [profile, decisions, team, mailCache, syncState, directory] =
+      await Promise.all([
+        skipGmail
+          ? Promise.resolve(null)
+          : gmail.users.getProfile({ userId: "me" }).then(async (res) => {
+              await ledger.charge("getProfile");
+              return res;
+            }),
+        loadDecisions(user),
+        loadTeam(user),
+        loadMailCache(user),
+        loadSyncState(user, "calendar"),
+        loadEmployees(),
+      ]);
+
+    roster = teamRoster(team, directory);
 
     const selfEmail = profile?.data.emailAddress ?? "";
     const historyId = normalizeHistoryId(profile?.data.historyId);
@@ -236,6 +244,7 @@ export async function GET(req: NextRequest) {
     );
     return NextResponse.json({
       leaves,
+      roster,
       ...(breaker
         ? { partial: true as const, retryAtMs: breaker.retryAt }
         : ledger.exhausted
@@ -247,6 +256,7 @@ export async function GET(req: NextRequest) {
     if (tripped) {
       return NextResponse.json({
         leaves: [],
+        roster,
         partial: true as const,
         retryAtMs: tripped.retryAt,
       });

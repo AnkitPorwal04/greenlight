@@ -7,7 +7,13 @@ import {
   longDateFromYmd,
   todayYmd,
 } from "@/lib/leave-dates";
-import { splitDayLeaves, type CalendarLeave } from "@/lib/calendar";
+import {
+  presentOnDay,
+  splitDayLeaves,
+  type CalendarLeave,
+  type CalendarRosterMember,
+  type DayPresence,
+} from "@/lib/calendar";
 
 function PersonRow({ leave }: { leave: CalendarLeave }) {
   const type = leave.leaveType || "Leave";
@@ -79,8 +85,61 @@ function DaySection({
   );
 }
 
+function OnDutyPanel({ presence }: { presence: DayPresence }) {
+  return (
+    <section className="lg:self-start">
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-4 py-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-[var(--border)] pb-2.5">
+          <h3 className="text-[10px] font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
+            On duty
+          </h3>
+          <span className="flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-[var(--text-secondary)]">
+            <span
+              aria-hidden="true"
+              className="lamp-dot h-[5px] w-[5px] shrink-0 lamp-green"
+            />
+            {presence.inCount} in
+            <span className="text-[var(--text-muted)]">·</span>
+            <span
+              aria-hidden="true"
+              className="lamp-dot h-[5px] w-[5px] shrink-0 lamp-amber"
+            />
+            {presence.outCount} out
+          </span>
+        </div>
+        {presence.present.length === 0 ? (
+          <p className="py-4 text-center text-[12px] text-[var(--text-muted)]">
+            No one is on duty that day.
+          </p>
+        ) : (
+          <ul className="divide-y divide-[var(--border)]">
+            {presence.present.map((member) => (
+              <li key={member.code} className="flex items-center gap-2.5 py-2">
+                <span
+                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold ${avatarTone(
+                    member.name
+                  )}`}
+                >
+                  {initials(member.name)}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--text-primary)]">
+                  {member.name}
+                </span>
+                <span className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+                  {member.code}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export function CalendarView() {
   const [leaves, setLeaves] = useState<CalendarLeave[]>([]);
+  const [roster, setRoster] = useState<CalendarRosterMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [day, setDay] = useState<string>(() => todayYmd());
@@ -100,6 +159,7 @@ export function CalendarView() {
           return;
         }
         setLeaves(Array.isArray(data.leaves) ? data.leaves : []);
+        setRoster(Array.isArray(data.roster) ? data.roster : []);
       })
       .catch(() => {
         if (!cancelled) setError("Could not load the calendar");
@@ -113,6 +173,20 @@ export function CalendarView() {
   }, []);
 
   const onDay = useMemo(() => splitDayLeaves(leaves, day), [leaves, day]);
+  const presence = useMemo(() => presentOnDay(roster, onDay), [roster, onDay]);
+  const showDuty = presence.inCount + presence.outCount > 0;
+
+  const daySections =
+    onDay.total === 0 ? (
+      <p className="py-10 text-center text-[13px] text-[var(--text-muted)]">
+        No one on your team is on leave that day.
+      </p>
+    ) : (
+      <div className="space-y-8">
+        <DaySection title="Approved" lamp="lamp-green" leaves={onDay.approved} />
+        <DaySection title="Pending" lamp="lamp-amber" leaves={onDay.pending} />
+      </div>
+    );
 
   return (
     <div>
@@ -171,19 +245,13 @@ export function CalendarView() {
             <div key={i} className="skeleton h-12 w-full rounded" />
           ))}
         </div>
-      ) : onDay.total === 0 ? (
-        <p className="py-10 text-center text-[13px] text-[var(--text-muted)]">
-          No one on your team is on leave that day.
-        </p>
-      ) : (
-        <div className="space-y-8">
-          <DaySection
-            title="Approved"
-            lamp="lamp-green"
-            leaves={onDay.approved}
-          />
-          <DaySection title="Pending" lamp="lamp-amber" leaves={onDay.pending} />
+      ) : showDuty ? (
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_16rem] lg:gap-10">
+          {daySections}
+          <OnDutyPanel presence={presence} />
         </div>
+      ) : (
+        daySections
       )}
     </div>
   );

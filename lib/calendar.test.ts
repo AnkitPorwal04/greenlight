@@ -2,10 +2,13 @@ import { describe, it, expect } from "vitest";
 import {
   countsAsOnLeave,
   countsAsSettled,
+  presentOnDay,
   splitDayLeaves,
   toCalendarLeaves,
   type CalendarCandidate,
   type CalendarLeave,
+  type CalendarRosterMember,
+  type DayLeaveSections,
 } from "./calendar";
 
 function leave(over: Partial<CalendarLeave> = {}): CalendarLeave {
@@ -387,5 +390,319 @@ describe("toCalendarLeaves arrival time", () => {
   it("leaves the arrival time unset when the row never had one", () => {
     const [row] = toCalendarLeaves([candidate()]);
     expect(row.receivedAt).toBeUndefined();
+  });
+});
+
+function sections(over: Partial<DayLeaveSections> = {}): DayLeaveSections {
+  const approved = over.approved ?? [];
+  const pending = over.pending ?? [];
+  return {
+    approved,
+    pending,
+    total: over.total ?? approved.length + pending.length,
+  };
+}
+
+const TEAM: CalendarRosterMember[] = [
+  { code: "EMP1", name: "Asha Nair" },
+  { code: "EMP2", name: "Biju Thomas" },
+  { code: "EMP3", name: "Carol Dsa" },
+];
+
+describe("presentOnDay", () => {
+  it("lists nobody when the manager has not configured a team", () => {
+    const day = sections({ approved: [leave({ employeeCode: "EMP1" })] });
+    expect(presentOnDay([], day)).toEqual({
+      present: [],
+      inCount: 0,
+      outCount: 0,
+    });
+  });
+
+  it("stays empty for a missing roster that arrived over the wire", () => {
+    const day = sections({ approved: [leave({ employeeCode: "EMP1" })] });
+    const missing = undefined as unknown as CalendarRosterMember[];
+    expect(presentOnDay(missing, day)).toEqual({
+      present: [],
+      inCount: 0,
+      outCount: 0,
+    });
+  });
+
+  it("stays empty when the roster is not an array at all", () => {
+    const day = sections({ approved: [leave({ employeeCode: "EMP1" })] });
+    const bogus = "EMP1" as unknown as CalendarRosterMember[];
+    expect(presentOnDay(bogus, day)).toEqual({
+      present: [],
+      inCount: 0,
+      outCount: 0,
+    });
+  });
+
+  it("marks everyone present when no one is on leave", () => {
+    const day = presentOnDay(TEAM, sections());
+    expect(day.present.map((m) => m.code)).toEqual(["EMP1", "EMP2", "EMP3"]);
+    expect(day.inCount).toBe(3);
+    expect(day.outCount).toBe(0);
+  });
+
+  it("drops a member with an approved leave from the present list", () => {
+    const day = presentOnDay(
+      TEAM,
+      sections({ approved: [leave({ employeeCode: "EMP2" })] })
+    );
+    expect(day.present.map((m) => m.code)).toEqual(["EMP1", "EMP3"]);
+    expect(day.inCount).toBe(2);
+    expect(day.outCount).toBe(1);
+  });
+
+  it("counts a pending leave as away, not as present", () => {
+    const day = presentOnDay(
+      TEAM,
+      sections({ pending: [leave({ employeeCode: "EMP3" })] })
+    );
+    expect(day.present.map((m) => m.code)).toEqual(["EMP1", "EMP2"]);
+    expect(day.outCount).toBe(1);
+  });
+
+  it("counts approved and pending leave together", () => {
+    const day = presentOnDay(
+      TEAM,
+      sections({
+        approved: [leave({ id: "a", employeeCode: "EMP1" })],
+        pending: [leave({ id: "b", employeeCode: "EMP2" })],
+      })
+    );
+    expect(day.present.map((m) => m.code)).toEqual(["EMP3"]);
+    expect(day.inCount).toBe(1);
+    expect(day.outCount).toBe(2);
+  });
+
+  it("empties the present list when the whole team is away", () => {
+    const day = presentOnDay(
+      TEAM,
+      sections({
+        approved: [
+          leave({ id: "a", employeeCode: "EMP1" }),
+          leave({ id: "b", employeeCode: "EMP2" }),
+          leave({ id: "c", employeeCode: "EMP3" }),
+        ],
+      })
+    );
+    expect(day.present).toEqual([]);
+    expect(day.inCount).toBe(0);
+    expect(day.outCount).toBe(3);
+  });
+
+  it("matches a lower case leave code against an upper case roster code", () => {
+    const day = presentOnDay(
+      TEAM,
+      sections({ approved: [leave({ employeeCode: "emp2" })] })
+    );
+    expect(day.present.map((m) => m.code)).toEqual(["EMP1", "EMP3"]);
+    expect(day.outCount).toBe(1);
+  });
+
+  it("matches a lower case roster code against an upper case leave code", () => {
+    const roster = [{ code: "emp2", name: "Biju Thomas" }];
+    const day = presentOnDay(
+      roster,
+      sections({ approved: [leave({ employeeCode: "EMP2" })] })
+    );
+    expect(day.present).toEqual([]);
+    expect(day.outCount).toBe(1);
+  });
+
+  it("matches across surrounding whitespace on both sides", () => {
+    const roster = [{ code: "  emp2 ", name: "Biju Thomas" }];
+    const day = presentOnDay(
+      roster,
+      sections({ approved: [leave({ employeeCode: " EMP2  " })] })
+    );
+    expect(day.present).toEqual([]);
+    expect(day.outCount).toBe(1);
+  });
+
+  it("does not match on display name when the codes differ", () => {
+    const day = presentOnDay(
+      TEAM,
+      sections({
+        approved: [leave({ employeeCode: "EMP9", employeeName: "Asha Nair" })],
+      })
+    );
+    expect(day.present.map((m) => m.code)).toEqual(["EMP1", "EMP2", "EMP3"]);
+    expect(day.inCount).toBe(3);
+    expect(day.outCount).toBe(0);
+  });
+
+  it("ignores a leave whose code is not on the roster", () => {
+    const day = presentOnDay(
+      TEAM,
+      sections({
+        approved: [
+          leave({ id: "in", employeeCode: "EMP1" }),
+          leave({ id: "out", employeeCode: "EMP404" }),
+        ],
+      })
+    );
+    expect(day.inCount).toBe(2);
+    expect(day.outCount).toBe(1);
+    expect(day.inCount + day.outCount).toBe(3);
+  });
+
+  it("ignores a leave row that carries no employee code", () => {
+    const day = presentOnDay(
+      TEAM,
+      sections({
+        approved: [leave({ employeeCode: "  ", employeeName: "Asha Nair" })],
+      })
+    );
+    expect(day.inCount).toBe(3);
+    expect(day.outCount).toBe(0);
+  });
+
+  it("sorts the present list by name, not by roster order", () => {
+    const roster = [
+      { code: "E3", name: "Carol Dsa" },
+      { code: "E1", name: "Asha Nair" },
+      { code: "E2", name: "Biju Thomas" },
+    ];
+    const day = presentOnDay(roster, sections());
+    expect(day.present.map((m) => m.name)).toEqual([
+      "Asha Nair",
+      "Biju Thomas",
+      "Carol Dsa",
+    ]);
+  });
+
+  it("counts a duplicated roster code only once", () => {
+    const roster = [
+      { code: "EMP1", name: "Asha Nair" },
+      { code: "emp1", name: "Asha Nair" },
+    ];
+    const day = presentOnDay(roster, sections());
+    expect(day.present.map((m) => m.code)).toEqual(["EMP1"]);
+    expect(day.inCount).toBe(1);
+    expect(day.outCount).toBe(0);
+  });
+
+  it("keeps the first spelling when a roster code repeats under two names", () => {
+    const roster = [
+      { code: "EMP1", name: "Asha Nair" },
+      { code: "emp1", name: "A. Nair" },
+    ];
+    const day = presentOnDay(roster, sections());
+    expect(day.present).toEqual([{ code: "EMP1", name: "Asha Nair" }]);
+    expect(day.inCount).toBe(1);
+  });
+
+  it("skips a roster row with a blank code", () => {
+    const roster = [
+      { code: "", name: "Ghost" },
+      { code: "EMP1", name: "Asha Nair" },
+    ];
+    const day = presentOnDay(roster, sections());
+    expect(day.present.map((m) => m.name)).toEqual(["Asha Nair"]);
+    expect(day.inCount).toBe(1);
+  });
+
+  it("gates on a roster whose every row has a blank code", () => {
+    const roster = [{ code: "  ", name: "Ghost" }];
+    const day = presentOnDay(
+      roster,
+      sections({ approved: [leave({ employeeCode: "EMP1" })] })
+    );
+    expect(day).toEqual({ present: [], inCount: 0, outCount: 0 });
+  });
+
+  it("falls back to the code when the roster has no name", () => {
+    const roster = [{ code: "EMP7", name: "   " }];
+    const day = presentOnDay(roster, sections());
+    expect(day.present).toEqual([{ code: "EMP7", name: "EMP7" }]);
+  });
+
+  it("normalises the code it reports back to upper case", () => {
+    const roster = [{ code: " emp7 ", name: "Dev Rao" }];
+    const day = presentOnDay(roster, sections());
+    expect(day.present).toEqual([{ code: "EMP7", name: "Dev Rao" }]);
+  });
+
+  it("keeps the headcount a partition of the configured team", () => {
+    const roster = [
+      { code: "EMP1", name: "Asha Nair" },
+      { code: "EMP2", name: "Biju Thomas" },
+      { code: "EMP3", name: "Carol Dsa" },
+      { code: "EMP1", name: "Asha Nair" },
+      { code: "", name: "Ghost" },
+    ];
+    const day = presentOnDay(
+      roster,
+      sections({
+        approved: [leave({ id: "a", employeeCode: "emp2" })],
+        pending: [leave({ id: "b", employeeCode: "NOTMINE" })],
+      })
+    );
+    expect(day.inCount + day.outCount).toBe(3);
+    expect(day.inCount).toBe(2);
+    expect(day.outCount).toBe(1);
+  });
+
+  it("counts one member away once even with two leave rows", () => {
+    const day = presentOnDay(
+      TEAM,
+      sections({
+        approved: [leave({ id: "a", employeeCode: "EMP1" })],
+        pending: [leave({ id: "b", employeeCode: "EMP1" })],
+      })
+    );
+    expect(day.inCount).toBe(2);
+    expect(day.outCount).toBe(1);
+  });
+
+  it("does not mutate the roster it was handed", () => {
+    const roster = [
+      { code: "E2", name: "Biju Thomas" },
+      { code: "E1", name: "Asha Nair" },
+    ];
+    presentOnDay(roster, sections());
+    expect(roster.map((m) => m.code)).toEqual(["E2", "E1"]);
+  });
+
+  it("works on the sections splitDayLeaves actually produces", () => {
+    const rows = [
+      leave({
+        id: "a",
+        employeeCode: "EMP1",
+        status: "approved",
+        fromYmd: "2026-09-03",
+        toYmd: "2026-09-03",
+      }),
+      leave({
+        id: "b",
+        employeeCode: "EMP2",
+        status: "pending",
+        fromYmd: "2026-09-03",
+        toYmd: "2026-09-03",
+      }),
+    ];
+    const day = presentOnDay(TEAM, splitDayLeaves(rows, "2026-09-03"));
+    expect(day.present.map((m) => m.code)).toEqual(["EMP3"]);
+    expect(day.inCount).toBe(1);
+    expect(day.outCount).toBe(2);
+  });
+
+  it("puts a member back on duty on a day their leave does not cover", () => {
+    const rows = [
+      leave({
+        id: "a",
+        employeeCode: "EMP1",
+        status: "approved",
+        fromYmd: "2026-09-03",
+        toYmd: "2026-09-03",
+      }),
+    ];
+    const day = presentOnDay(TEAM, splitDayLeaves(rows, "2026-09-04"));
+    expect(day.present.map((m) => m.code)).toEqual(["EMP1", "EMP2", "EMP3"]);
+    expect(day.outCount).toBe(0);
   });
 });
