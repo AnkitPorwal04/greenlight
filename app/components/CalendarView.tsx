@@ -98,13 +98,13 @@ function OnDutyPanel({ presence }: { presence: DayPresence }) {
               aria-hidden="true"
               className="lamp-dot h-[5px] w-[5px] shrink-0 lamp-green"
             />
-            {presence.inCount} in
+            {presence.present.length} in
             <span className="text-[var(--text-muted)]">·</span>
             <span
               aria-hidden="true"
               className="lamp-dot h-[5px] w-[5px] shrink-0 lamp-amber"
             />
-            {presence.outCount} out
+            {presence.wfh.length + presence.absent.length} out
           </span>
         </div>
         {presence.present.length === 0 ? (
@@ -174,7 +174,8 @@ export function CalendarView() {
 
   const onDay = useMemo(() => splitDayLeaves(leaves, day), [leaves, day]);
   const presence = useMemo(() => presentOnDay(roster, onDay), [roster, onDay]);
-  const showDuty = presence.inCount + presence.outCount > 0;
+  const showDuty =
+    presence.present.length + presence.wfh.length + presence.absent.length > 0;
 
   const daySections =
     onDay.total === 0 ? (

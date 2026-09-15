@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   countsAsOnLeave,
   countsAsSettled,
+  isWorkFromHome,
   presentOnDay,
   splitDayLeaves,
   toCalendarLeaves,
@@ -9,6 +10,7 @@ import {
   type CalendarLeave,
   type CalendarRosterMember,
   type DayLeaveSections,
+  type DayPresence,
 } from "./calendar";
 
 function leave(over: Partial<CalendarLeave> = {}): CalendarLeave {
@@ -414,8 +416,8 @@ describe("presentOnDay", () => {
     const day = sections({ approved: [leave({ employeeCode: "EMP1" })] });
     expect(presentOnDay([], day)).toEqual({
       present: [],
-      inCount: 0,
-      outCount: 0,
+      wfh: [],
+      absent: [],
     });
   });
 
@@ -424,8 +426,8 @@ describe("presentOnDay", () => {
     const missing = undefined as unknown as CalendarRosterMember[];
     expect(presentOnDay(missing, day)).toEqual({
       present: [],
-      inCount: 0,
-      outCount: 0,
+      wfh: [],
+      absent: [],
     });
   });
 
@@ -434,16 +436,17 @@ describe("presentOnDay", () => {
     const bogus = "EMP1" as unknown as CalendarRosterMember[];
     expect(presentOnDay(bogus, day)).toEqual({
       present: [],
-      inCount: 0,
-      outCount: 0,
+      wfh: [],
+      absent: [],
     });
   });
 
   it("marks everyone present when no one is on leave", () => {
     const day = presentOnDay(TEAM, sections());
     expect(day.present.map((m) => m.code)).toEqual(["EMP1", "EMP2", "EMP3"]);
-    expect(day.inCount).toBe(3);
-    expect(day.outCount).toBe(0);
+    expect(day.present.length).toBe(3);
+    expect(day.wfh).toEqual([]);
+    expect(day.absent).toEqual([]);
   });
 
   it("drops a member with an approved leave from the present list", () => {
@@ -452,8 +455,8 @@ describe("presentOnDay", () => {
       sections({ approved: [leave({ employeeCode: "EMP2" })] })
     );
     expect(day.present.map((m) => m.code)).toEqual(["EMP1", "EMP3"]);
-    expect(day.inCount).toBe(2);
-    expect(day.outCount).toBe(1);
+    expect(day.present.length).toBe(2);
+    expect(day.absent.map((m) => m.code)).toEqual(["EMP2"]);
   });
 
   it("counts a pending leave as away, not as present", () => {
@@ -462,7 +465,7 @@ describe("presentOnDay", () => {
       sections({ pending: [leave({ employeeCode: "EMP3" })] })
     );
     expect(day.present.map((m) => m.code)).toEqual(["EMP1", "EMP2"]);
-    expect(day.outCount).toBe(1);
+    expect(day.absent.map((m) => m.code)).toEqual(["EMP3"]);
   });
 
   it("counts approved and pending leave together", () => {
@@ -474,8 +477,8 @@ describe("presentOnDay", () => {
       })
     );
     expect(day.present.map((m) => m.code)).toEqual(["EMP3"]);
-    expect(day.inCount).toBe(1);
-    expect(day.outCount).toBe(2);
+    expect(day.present.length).toBe(1);
+    expect(day.absent.map((m) => m.code)).toEqual(["EMP1", "EMP2"]);
   });
 
   it("empties the present list when the whole team is away", () => {
@@ -490,8 +493,8 @@ describe("presentOnDay", () => {
       })
     );
     expect(day.present).toEqual([]);
-    expect(day.inCount).toBe(0);
-    expect(day.outCount).toBe(3);
+    expect(day.present.length).toBe(0);
+    expect(day.absent.length).toBe(3);
   });
 
   it("matches a lower case leave code against an upper case roster code", () => {
@@ -500,7 +503,7 @@ describe("presentOnDay", () => {
       sections({ approved: [leave({ employeeCode: "emp2" })] })
     );
     expect(day.present.map((m) => m.code)).toEqual(["EMP1", "EMP3"]);
-    expect(day.outCount).toBe(1);
+    expect(day.absent.map((m) => m.code)).toEqual(["EMP2"]);
   });
 
   it("matches a lower case roster code against an upper case leave code", () => {
@@ -510,7 +513,7 @@ describe("presentOnDay", () => {
       sections({ approved: [leave({ employeeCode: "EMP2" })] })
     );
     expect(day.present).toEqual([]);
-    expect(day.outCount).toBe(1);
+    expect(day.absent.map((m) => m.code)).toEqual(["EMP2"]);
   });
 
   it("matches across surrounding whitespace on both sides", () => {
@@ -520,7 +523,7 @@ describe("presentOnDay", () => {
       sections({ approved: [leave({ employeeCode: " EMP2  " })] })
     );
     expect(day.present).toEqual([]);
-    expect(day.outCount).toBe(1);
+    expect(day.absent.map((m) => m.code)).toEqual(["EMP2"]);
   });
 
   it("does not match on display name when the codes differ", () => {
@@ -531,8 +534,9 @@ describe("presentOnDay", () => {
       })
     );
     expect(day.present.map((m) => m.code)).toEqual(["EMP1", "EMP2", "EMP3"]);
-    expect(day.inCount).toBe(3);
-    expect(day.outCount).toBe(0);
+    expect(day.present.length).toBe(3);
+    expect(day.wfh).toEqual([]);
+    expect(day.absent).toEqual([]);
   });
 
   it("ignores a leave whose code is not on the roster", () => {
@@ -545,9 +549,9 @@ describe("presentOnDay", () => {
         ],
       })
     );
-    expect(day.inCount).toBe(2);
-    expect(day.outCount).toBe(1);
-    expect(day.inCount + day.outCount).toBe(3);
+    expect(day.present.length).toBe(2);
+    expect(day.absent.map((m) => m.code)).toEqual(["EMP1"]);
+    expect(day.present.length + day.wfh.length + day.absent.length).toBe(3);
   });
 
   it("ignores a leave row that carries no employee code", () => {
@@ -557,8 +561,9 @@ describe("presentOnDay", () => {
         approved: [leave({ employeeCode: "  ", employeeName: "Asha Nair" })],
       })
     );
-    expect(day.inCount).toBe(3);
-    expect(day.outCount).toBe(0);
+    expect(day.present.length).toBe(3);
+    expect(day.wfh).toEqual([]);
+    expect(day.absent).toEqual([]);
   });
 
   it("sorts the present list by name, not by roster order", () => {
@@ -582,8 +587,8 @@ describe("presentOnDay", () => {
     ];
     const day = presentOnDay(roster, sections());
     expect(day.present.map((m) => m.code)).toEqual(["EMP1"]);
-    expect(day.inCount).toBe(1);
-    expect(day.outCount).toBe(0);
+    expect(day.present.length).toBe(1);
+    expect(day.absent.length).toBe(0);
   });
 
   it("keeps the first spelling when a roster code repeats under two names", () => {
@@ -593,7 +598,7 @@ describe("presentOnDay", () => {
     ];
     const day = presentOnDay(roster, sections());
     expect(day.present).toEqual([{ code: "EMP1", name: "Asha Nair" }]);
-    expect(day.inCount).toBe(1);
+    expect(day.present.length).toBe(1);
   });
 
   it("skips a roster row with a blank code", () => {
@@ -603,7 +608,7 @@ describe("presentOnDay", () => {
     ];
     const day = presentOnDay(roster, sections());
     expect(day.present.map((m) => m.name)).toEqual(["Asha Nair"]);
-    expect(day.inCount).toBe(1);
+    expect(day.present.length).toBe(1);
   });
 
   it("gates on a roster whose every row has a blank code", () => {
@@ -612,7 +617,7 @@ describe("presentOnDay", () => {
       roster,
       sections({ approved: [leave({ employeeCode: "EMP1" })] })
     );
-    expect(day).toEqual({ present: [], inCount: 0, outCount: 0 });
+    expect(day).toEqual({ present: [], wfh: [], absent: [] });
   });
 
   it("falls back to the code when the roster has no name", () => {
@@ -642,9 +647,9 @@ describe("presentOnDay", () => {
         pending: [leave({ id: "b", employeeCode: "NOTMINE" })],
       })
     );
-    expect(day.inCount + day.outCount).toBe(3);
-    expect(day.inCount).toBe(2);
-    expect(day.outCount).toBe(1);
+    expect(day.present.length + day.wfh.length + day.absent.length).toBe(3);
+    expect(day.present.length).toBe(2);
+    expect(day.absent.length).toBe(1);
   });
 
   it("counts one member away once even with two leave rows", () => {
@@ -655,8 +660,8 @@ describe("presentOnDay", () => {
         pending: [leave({ id: "b", employeeCode: "EMP1" })],
       })
     );
-    expect(day.inCount).toBe(2);
-    expect(day.outCount).toBe(1);
+    expect(day.present.length).toBe(2);
+    expect(day.absent.map((m) => m.code)).toEqual(["EMP1"]);
   });
 
   it("does not mutate the roster it was handed", () => {
@@ -687,8 +692,8 @@ describe("presentOnDay", () => {
     ];
     const day = presentOnDay(TEAM, splitDayLeaves(rows, "2026-09-03"));
     expect(day.present.map((m) => m.code)).toEqual(["EMP3"]);
-    expect(day.inCount).toBe(1);
-    expect(day.outCount).toBe(2);
+    expect(day.present.length).toBe(1);
+    expect(day.absent.map((m) => m.code)).toEqual(["EMP1", "EMP2"]);
   });
 
   it("puts a member back on duty on a day their leave does not cover", () => {
@@ -703,6 +708,347 @@ describe("presentOnDay", () => {
     ];
     const day = presentOnDay(TEAM, splitDayLeaves(rows, "2026-09-04"));
     expect(day.present.map((m) => m.code)).toEqual(["EMP1", "EMP2", "EMP3"]);
-    expect(day.outCount).toBe(0);
+    expect(day.wfh.length).toBe(0);
+    expect(day.absent.length).toBe(0);
+  });
+});
+
+describe("isWorkFromHome", () => {
+  it("accepts the bare acronym", () => {
+    expect(isWorkFromHome("WFH")).toBe(true);
+  });
+
+  it("accepts the spelled out phrase in title case", () => {
+    expect(isWorkFromHome("Work From Home")).toBe(true);
+  });
+
+  it("accepts the phrase with the acronym appended", () => {
+    expect(isWorkFromHome("work from home (WFH)")).toBe(true);
+  });
+
+  it("ignores case on the acronym", () => {
+    expect(isWorkFromHome("wfh")).toBe(true);
+    expect(isWorkFromHome("Wfh")).toBe(true);
+  });
+
+  it("ignores surrounding whitespace", () => {
+    expect(isWorkFromHome("  WFH  ")).toBe(true);
+    expect(isWorkFromHome("\tWork From Home\n")).toBe(true);
+  });
+
+  it("collapses internal whitespace before matching", () => {
+    expect(isWorkFromHome("Work  From   Home")).toBe(true);
+    expect(isWorkFromHome("work\tfrom\nhome")).toBe(true);
+  });
+
+  it("rejects real leave types", () => {
+    expect(isWorkFromHome("Casual Leave")).toBe(false);
+    expect(isWorkFromHome("Sick Leave")).toBe(false);
+    expect(isWorkFromHome("Earned Leave")).toBe(false);
+    expect(isWorkFromHome("Maternity Leave")).toBe(false);
+  });
+
+  it("rejects an empty or blank type", () => {
+    expect(isWorkFromHome("")).toBe(false);
+    expect(isWorkFromHome("   ")).toBe(false);
+  });
+
+  it("does not treat the acronym as a substring of another word", () => {
+    expect(isWorkFromHome("WFHX")).toBe(false);
+    expect(isWorkFromHome("half day wfh request")).toBe(false);
+  });
+
+  it("survives a type that never arrived over the wire", () => {
+    expect(isWorkFromHome(undefined as unknown as string)).toBe(false);
+    expect(isWorkFromHome(null as unknown as string)).toBe(false);
+  });
+});
+
+describe("presentOnDay work from home bucket", () => {
+  it("puts a work from home member in their own bucket, not absent", () => {
+    const day = presentOnDay(
+      TEAM,
+      sections({
+        approved: [
+          leave({ employeeCode: "EMP2", leaveType: "Work From Home" }),
+        ],
+      })
+    );
+    expect(day.present.map((m) => m.code)).toEqual(["EMP1", "EMP3"]);
+    expect(day.wfh.map((m) => m.code)).toEqual(["EMP2"]);
+    expect(day.absent).toEqual([]);
+  });
+
+  it("treats a pending work from home row the same as an approved one", () => {
+    const day = presentOnDay(
+      TEAM,
+      sections({ pending: [leave({ employeeCode: "EMP2", leaveType: "WFH" })] })
+    );
+    expect(day.wfh.map((m) => m.code)).toEqual(["EMP2"]);
+    expect(day.absent).toEqual([]);
+  });
+
+  it("keeps work from home out of the present bucket", () => {
+    const day = presentOnDay(
+      TEAM,
+      sections({
+        approved: [leave({ employeeCode: "EMP1", leaveType: "WFH" })],
+      })
+    );
+    expect(day.present.map((m) => m.code)).not.toContain("EMP1");
+  });
+
+  it("splits three members across all three buckets at once", () => {
+    const day = presentOnDay(
+      TEAM,
+      sections({
+        approved: [
+          leave({ id: "a", employeeCode: "EMP2", leaveType: "WFH" }),
+          leave({ id: "b", employeeCode: "EMP3", leaveType: "Sick Leave" }),
+        ],
+      })
+    );
+    expect(day.present.map((m) => m.code)).toEqual(["EMP1"]);
+    expect(day.wfh.map((m) => m.code)).toEqual(["EMP2"]);
+    expect(day.absent.map((m) => m.code)).toEqual(["EMP3"]);
+  });
+
+  it("sorts the work from home list by name, not by roster order", () => {
+    const roster = [
+      { code: "E3", name: "Carol Dsa" },
+      { code: "E1", name: "Asha Nair" },
+      { code: "E2", name: "Biju Thomas" },
+    ];
+    const day = presentOnDay(
+      roster,
+      sections({
+        approved: [
+          leave({ id: "a", employeeCode: "E3", leaveType: "WFH" }),
+          leave({ id: "b", employeeCode: "E1", leaveType: "WFH" }),
+          leave({ id: "c", employeeCode: "E2", leaveType: "WFH" }),
+        ],
+      })
+    );
+    expect(day.wfh.map((m) => m.name)).toEqual([
+      "Asha Nair",
+      "Biju Thomas",
+      "Carol Dsa",
+    ]);
+  });
+
+  it("sorts the absent list by name, not by roster order", () => {
+    const roster = [
+      { code: "E3", name: "Carol Dsa" },
+      { code: "E1", name: "Asha Nair" },
+      { code: "E2", name: "Biju Thomas" },
+    ];
+    const day = presentOnDay(
+      roster,
+      sections({
+        approved: [
+          leave({ id: "a", employeeCode: "E3" }),
+          leave({ id: "b", employeeCode: "E1" }),
+          leave({ id: "c", employeeCode: "E2" }),
+        ],
+      })
+    );
+    expect(day.absent.map((m) => m.name)).toEqual([
+      "Asha Nair",
+      "Biju Thomas",
+      "Carol Dsa",
+    ]);
+  });
+});
+
+describe("presentOnDay real leave beats work from home", () => {
+  it("marks a member absent when a sick leave sits beside a work from home row", () => {
+    const day = presentOnDay(
+      TEAM,
+      sections({
+        approved: [
+          leave({ id: "a", employeeCode: "EMP1", leaveType: "Work From Home" }),
+          leave({ id: "b", employeeCode: "EMP1", leaveType: "Sick Leave" }),
+        ],
+      })
+    );
+    expect(day.absent.map((m) => m.code)).toEqual(["EMP1"]);
+    expect(day.wfh).toEqual([]);
+    expect(day.present.map((m) => m.code)).toEqual(["EMP2", "EMP3"]);
+  });
+
+  it("marks a member absent whichever order the two rows arrive in", () => {
+    const day = presentOnDay(
+      TEAM,
+      sections({
+        approved: [
+          leave({ id: "a", employeeCode: "EMP1", leaveType: "Sick Leave" }),
+          leave({ id: "b", employeeCode: "EMP1", leaveType: "Work From Home" }),
+        ],
+      })
+    );
+    expect(day.absent.map((m) => m.code)).toEqual(["EMP1"]);
+    expect(day.wfh).toEqual([]);
+  });
+
+  it("marks a member absent when the rows straddle approved and pending", () => {
+    const day = presentOnDay(
+      TEAM,
+      sections({
+        approved: [
+          leave({ id: "a", employeeCode: "EMP1", leaveType: "WFH" }),
+        ],
+        pending: [
+          leave({ id: "b", employeeCode: "EMP1", leaveType: "Casual Leave" }),
+        ],
+      })
+    );
+    expect(day.absent.map((m) => m.code)).toEqual(["EMP1"]);
+    expect(day.wfh).toEqual([]);
+  });
+
+  it("keeps a member on work from home when every row is work from home", () => {
+    const day = presentOnDay(
+      TEAM,
+      sections({
+        approved: [
+          leave({ id: "a", employeeCode: "EMP1", leaveType: "WFH" }),
+          leave({ id: "b", employeeCode: "EMP1", leaveType: "Work From Home" }),
+        ],
+      })
+    );
+    expect(day.wfh.map((m) => m.code)).toEqual(["EMP1"]);
+    expect(day.absent).toEqual([]);
+  });
+});
+
+describe("presentOnDay partitions the configured team", () => {
+  function uniqueRosterCodes(roster: CalendarRosterMember[]): number {
+    const seen = new Set<string>();
+    for (const m of roster) {
+      const code = typeof m.code === "string" ? m.code.trim().toUpperCase() : "";
+      if (code) seen.add(code);
+    }
+    return seen.size;
+  }
+
+  function expectPartition(
+    roster: CalendarRosterMember[],
+    day: DayLeaveSections
+  ): DayPresence {
+    const presence = presentOnDay(roster, day);
+    expect(
+      presence.present.length + presence.wfh.length + presence.absent.length
+    ).toBe(uniqueRosterCodes(roster));
+    const codes = [
+      ...presence.present.map((m) => m.code),
+      ...presence.wfh.map((m) => m.code),
+      ...presence.absent.map((m) => m.code),
+    ];
+    expect(new Set(codes).size).toBe(codes.length);
+    return presence;
+  }
+
+  it("holds when nobody is on leave", () => {
+    expectPartition(TEAM, sections());
+  });
+
+  it("holds with a mix of all three buckets", () => {
+    expectPartition(
+      TEAM,
+      sections({
+        approved: [leave({ id: "a", employeeCode: "EMP1", leaveType: "WFH" })],
+        pending: [leave({ id: "b", employeeCode: "EMP2" })],
+      })
+    );
+  });
+
+  it("holds when a duplicated roster code is present", () => {
+    const roster = [
+      { code: "EMP1", name: "Asha Nair" },
+      { code: "emp1", name: "A. Nair" },
+      { code: "EMP2", name: "Biju Thomas" },
+    ];
+    const presence = expectPartition(
+      roster,
+      sections({ approved: [leave({ employeeCode: "EMP1" })] })
+    );
+    expect(presence.absent).toEqual([{ code: "EMP1", name: "Asha Nair" }]);
+  });
+
+  it("holds when a blank roster code is mixed in", () => {
+    const roster = [
+      { code: "  ", name: "Ghost" },
+      { code: "EMP1", name: "Asha Nair" },
+      { code: "EMP2", name: "Biju Thomas" },
+    ];
+    expectPartition(
+      roster,
+      sections({
+        approved: [leave({ employeeCode: "EMP2", leaveType: "WFH" })],
+      })
+    );
+  });
+
+  it("holds when a leave row belongs to nobody on the roster", () => {
+    const presence = expectPartition(
+      TEAM,
+      sections({
+        approved: [
+          leave({ id: "a", employeeCode: "NOTMINE" }),
+          leave({ id: "b", employeeCode: "STRANGER", leaveType: "WFH" }),
+        ],
+      })
+    );
+    expect(presence.present.length).toBe(3);
+    expect(presence.wfh).toEqual([]);
+    expect(presence.absent).toEqual([]);
+  });
+
+  it("holds when the whole team works from home", () => {
+    const presence = expectPartition(
+      TEAM,
+      sections({
+        approved: [
+          leave({ id: "a", employeeCode: "EMP1", leaveType: "WFH" }),
+          leave({ id: "b", employeeCode: "EMP2", leaveType: "WFH" }),
+          leave({ id: "c", employeeCode: "EMP3", leaveType: "WFH" }),
+        ],
+      })
+    );
+    expect(presence.wfh.length).toBe(3);
+  });
+
+  it("holds on an empty roster", () => {
+    expectPartition([], sections({ approved: [leave()] }));
+  });
+
+  it("never leaks a leave row employee into any bucket", () => {
+    const presence = presentOnDay(
+      TEAM,
+      sections({
+        approved: [
+          leave({ id: "a", employeeCode: "GHOST1", employeeName: "Ghost One" }),
+          leave({ id: "b", employeeCode: "GHOST2", employeeName: "Ghost Two" }),
+        ],
+      })
+    );
+    const everyone = [
+      ...presence.present,
+      ...presence.wfh,
+      ...presence.absent,
+    ].map((m) => m.code);
+    expect(everyone).not.toContain("GHOST1");
+    expect(everyone).not.toContain("GHOST2");
+    expect(everyone.sort()).toEqual(["EMP1", "EMP2", "EMP3"]);
+  });
+
+  it("does not grow a bucket from a directory of strangers", () => {
+    const strangers = Array.from({ length: 50 }, (_, i) =>
+      leave({ id: `s${i}`, employeeCode: `X${i}`, employeeName: `Stranger ${i}` })
+    );
+    const presence = presentOnDay(TEAM, sections({ approved: strangers }));
+    expect(
+      presence.present.length + presence.wfh.length + presence.absent.length
+    ).toBe(3);
   });
 });
